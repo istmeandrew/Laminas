@@ -386,6 +386,7 @@ function renderSummary() {
   const receivable = state.sales.filter((sale) => sale.paymentStatus === "pendiente").reduce((sum, sale) => sum + saleTotal(sale), 0);
   const stock = totalStock();
   $("#topTodaySales").textContent = money(todayTotal);
+  $("#topTodayUnits").textContent = `${units(todayUnits)} vendidas`;
   $("#topStock").textContent = units(stock);
   $("#topReceivable").textContent = money(receivable);
 }

@@ -126,6 +126,7 @@ h2 { font-size: 1.05rem; }
 }
 
 .top-grid span,
+.top-grid small,
 .status-list span,
 .report-grid span,
 label,
@@ -138,6 +139,12 @@ label,
 .top-grid strong {
   font-size: clamp(1rem, 4vw, 1.3rem);
   line-height: 1.05;
+}
+
+.top-grid small {
+  display: block;
+  font-weight: 900;
+  line-height: 1.1;
 }
 
 .view { display: none; }

@@ -1,6 +1,6 @@
 const DB_NAME = "laminas-mundial-pos-db";
 const DB_VERSION = 1;
-const APP_VERSION = "20260527-2";
+const APP_VERSION = "20260527-3";
 const STORE_NAMES = ["products", "suppliers", "sales", "purchases", "payments", "settings"];
 const DEFAULT_PRODUCT_ID = "product-laminas-mundial";
 const DEFAULT_SUPPLIER_ID = "supplier-general";
@@ -532,7 +532,10 @@ function renderDashboard() {
 }
 
 function renderDailyPaymentSummary() {
-  const start = startOfDay(new Date());
+  const input = $("#dailyPaymentDate");
+  if (!input.value) input.value = todayInputValue();
+  const [year, month, day] = input.value.split("-").map(Number);
+  const start = startOfDay(new Date(year, month - 1, day));
   const end = new Date(start);
   end.setDate(end.getDate() + 1);
   const sales = state.sales.filter((sale) => isInRange(sale.createdAt, start, end));
@@ -546,7 +549,6 @@ function renderDailyPaymentSummary() {
     groups[key].amount += saleTotal(sale);
     groups[key].units += Number(sale.quantity) || 0;
   }
-  $("#dailyPaymentDate").textContent = new Intl.DateTimeFormat("es-CL", { day: "2-digit", month: "short" }).format(start);
   $("#todayCash").textContent = money(groups.efectivo.amount);
   $("#todayCashUnits").textContent = `${units(groups.efectivo.units)} vendidas`;
   $("#todayCard").textContent = money(groups.tarjeta.amount);
@@ -1044,6 +1046,7 @@ function bindEvents() {
   $("#resetBtn").addEventListener("click", resetData);
   $("#historyFilter").addEventListener("change", renderHistory);
   $("#dashboardMonth").addEventListener("change", renderDashboard);
+  $("#dailyPaymentDate").addEventListener("change", renderDailyPaymentSummary);
   $("#saleQty").addEventListener("input", updateSalePreview);
   $("#salePrice").addEventListener("input", () => {
     state.settings.lastSalePrice = Number($("#salePrice").value) || state.settings.lastSalePrice;

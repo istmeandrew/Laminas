@@ -1,5 +1,6 @@
 const DB_NAME = "laminas-mundial-pos-db";
 const DB_VERSION = 1;
+const APP_VERSION = "20260527-1";
 const STORE_NAMES = ["products", "suppliers", "sales", "purchases", "payments", "settings"];
 const DEFAULT_PRODUCT_ID = "product-laminas-mundial";
 const DEFAULT_SUPPLIER_ID = "supplier-general";
@@ -1149,7 +1150,24 @@ async function init() {
   updateClock();
   setInterval(updateClock, 30000);
   if ("serviceWorker" in navigator && location.protocol !== "file:") {
-    navigator.serviceWorker.register("./sw.js").catch(() => {});
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (refreshing) return;
+      refreshing = true;
+      window.location.reload();
+    });
+    navigator.serviceWorker.register(`./sw.js?v=${APP_VERSION}`).then((registration) => {
+      registration.addEventListener("updatefound", () => {
+        const worker = registration.installing;
+        if (!worker) return;
+        worker.addEventListener("statechange", () => {
+          if (worker.state === "installed" && navigator.serviceWorker.controller) {
+            toast("Actualizando app...");
+            setTimeout(() => window.location.reload(), 500);
+          }
+        });
+      });
+    }).catch(() => {});
   }
 }
 

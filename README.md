@@ -15,3 +15,7 @@ Para instalarla en el iPhone como app web, súbela a GitHub Pages o ejecútala d
 En la pestaña `Historial` puedes exportar e importar el respaldo JSON.
 
 La clave para eliminar registros es `4818`.
+
+## Actualizaciones
+
+La app está configurada para GitHub Pages con caché de red primero. Al subir cambios, refresca la app o ciérrala y vuelve a abrirla en iPhone para tomar la última versión.

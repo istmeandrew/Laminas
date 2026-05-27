@@ -1,5 +1,15 @@
-const CACHE_NAME = "laminas-mundial-pos-v1";
-const ASSETS = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest", "./icon.svg"];
+const APP_VERSION = "20260527-1";
+const CACHE_NAME = `laminas-mundial-pos-${APP_VERSION}`;
+const ASSETS = [
+  "./",
+  "./index.html",
+  `./styles.css?v=${APP_VERSION}`,
+  `./app.js?v=${APP_VERSION}`,
+  `./manifest.webmanifest?v=${APP_VERSION}`,
+  `./icon.svg?v=${APP_VERSION}`,
+  `./apple-touch-icon.png?v=${APP_VERSION}`,
+  "./icon-512.png"
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS)));
@@ -15,5 +25,15 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
-  event.respondWith(caches.match(event.request).then((cached) => cached || fetch(event.request)));
+  event.respondWith(
+    fetch(event.request)
+      .then((response) => {
+        if (response && response.status === 200) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request).then((cached) => cached || caches.match("./index.html")))
+  );
 });

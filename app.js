@@ -910,8 +910,8 @@ async function confirmDelete(event) {
   toast("Registro eliminado");
 }
 
-function exportData(showOnly = false) {
-  const payload = {
+function backupPayload() {
+  return {
     app: "laminas-mundial-pos",
     exportedAt: new Date().toISOString(),
     products: state.products,
@@ -921,7 +921,36 @@ function exportData(showOnly = false) {
     payments: state.payments,
     settings: state.settings
   };
-  const text = JSON.stringify(payload, null, 2);
+}
+
+function backupText() {
+  return JSON.stringify(backupPayload(), null, 2);
+}
+
+async function copyBackup() {
+  const text = $("#backupText").value || backupText();
+  $("#backupText").value = text;
+  $("#backupText").focus();
+  $("#backupText").select();
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      toast("Respaldo copiado");
+      return;
+    }
+  } catch (error) {
+    console.warn("No se pudo copiar con Clipboard API", error);
+  }
+  try {
+    document.execCommand("copy");
+    toast("Respaldo copiado");
+  } catch (error) {
+    toast("Selecciona el texto y cópialo manualmente");
+  }
+}
+
+function exportData(showOnly = false) {
+  const text = backupText();
   $("#backupText").value = text;
   if (showOnly) {
     toast("Respaldo listo para copiar");
@@ -929,10 +958,16 @@ function exportData(showOnly = false) {
   }
   const blob = new Blob([text], { type: "application/json" });
   const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
+  const url = URL.createObjectURL(blob);
+  link.href = url;
   link.download = `respaldo-laminas-pos-${todayInputValue()}.json`;
+  link.style.display = "none";
+  document.body.appendChild(link);
   link.click();
-  URL.revokeObjectURL(link.href);
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+    link.remove();
+  }, 1200);
   toast("Respaldo exportado");
 }
 
@@ -973,6 +1008,7 @@ function bindEvents() {
   $("#backupBtn").addEventListener("click", () => exportData());
   $("#exportBtn").addEventListener("click", () => exportData());
   $("#showBackupBtn").addEventListener("click", () => exportData(true));
+  $("#copyBackupBtn").addEventListener("click", () => copyBackup());
   $("#importFile").addEventListener("change", (event) => {
     const file = event.target.files?.[0];
     if (file) importData(file).catch(() => toast("No se pudo importar"));

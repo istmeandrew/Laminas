@@ -1,0 +1,29 @@
+{
+  "name": "Láminas Mundial POS",
+  "short_name": "Láminas POS",
+  "description": "Punto de venta local para láminas del mundial.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#fff8db",
+  "theme_color": "#f2c400",
+  "icons": [
+    {
+      "src": "apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

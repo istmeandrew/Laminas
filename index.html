@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f2c400">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Láminas POS">
+  <meta name="description" content="Punto de venta local para láminas del mundial, inventario, compras, pagos y respaldo.">
+  <title>Láminas Mundial POS</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app">
+    <header class="hero">
+      <div class="brand-mark" aria-hidden="true">P</div>
+      <div>
+        <p class="eyebrow">Mundial 2026</p>
+        <h1>Láminas POS</h1>
+        <p class="hero-copy">Ventas, stock y pagos en una sola libreta digital.</p>
+      </div>
+      <button class="icon-button" id="backupBtn" title="Respaldar datos">⇩</button>
+    </header>
+
+    <section class="top-grid">
+      <article>
+        <span>Ventas hoy</span>
+        <strong id="topTodaySales">$0</strong>
+      </article>
+      <article>
+        <span>Stock actual</span>
+        <strong id="topStock">0</strong>
+      </article>
+      <article>
+        <span>Pendiente cobro</span>
+        <strong id="topReceivable">$0</strong>
+      </article>
+    </section>
+
+    <section class="view active" id="sellView">
+      <form class="card form" id="saleForm">
+        <div class="card-head">
+          <h2>Registrar venta</h2>
+          <span id="saleClock">Ahora</span>
+        </div>
+        <label>Producto
+          <select id="saleProduct"></select>
+        </label>
+        <label>Fecha de venta
+          <input id="saleDate" type="date" required>
+        </label>
+        <label>Cantidad vendida
+          <input id="saleQty" type="number" min="1" step="1" inputmode="numeric" placeholder="Ej: 10" required>
+        </label>
+        <label>Precio por lámina / unidad
+          <input id="salePrice" type="number" min="0" step="1" inputmode="numeric" required>
+        </label>
+        <div class="price-tools">
+          <div class="price-buttons" id="salePriceButtons"></div>
+          <div class="add-row">
+            <input id="newSalePricePreset" type="number" min="0" step="1" inputmode="numeric" placeholder="Nuevo precio">
+            <button class="secondary" type="button" id="addSalePricePresetBtn">Agregar</button>
+          </div>
+        </div>
+        <fieldset class="segmented">
+          <legend>Estado de pago</legend>
+          <label><input type="radio" name="salePaymentStatus" value="efectivo" checked><span>Efectivo</span></label>
+          <label><input type="radio" name="salePaymentStatus" value="tarjeta"><span>Tarjeta</span></label>
+          <label><input type="radio" name="salePaymentStatus" value="pendiente"><span>Pendiente</span></label>
+        </fieldset>
+        <label>Cliente / nota
+          <input id="saleNote" placeholder="Opcional">
+        </label>
+        <div class="preview-row">
+          <span>Total venta</span>
+          <strong id="salePreview">$0</strong>
+        </div>
+        <button class="primary" type="submit">Guardar venta</button>
+      </form>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Últimas ventas</h2>
+          <button class="text-button" data-tab-target="history">Ver todo</button>
+        </div>
+        <div class="list" id="recentSales"></div>
+      </section>
+    </section>
+
+    <section class="view" id="buyView">
+      <form class="card form" id="purchaseForm">
+        <div class="card-head">
+          <h2>Registrar compra</h2>
+        </div>
+        <label>Fecha de compra
+          <input id="purchaseDate" type="date" required>
+        </label>
+        <label>Producto
+          <select id="purchaseProduct"></select>
+        </label>
+        <label>Crear producto
+          <div class="add-row">
+            <input id="newProductName" placeholder="Ej: Láminas Mundial, álbum, sobres">
+            <button class="secondary" type="button" id="addProductBtn">Agregar</button>
+          </div>
+        </label>
+        <label>Cantidad comprada
+          <input id="purchaseQty" type="number" min="1" step="1" inputmode="numeric" placeholder="Ej: 100" required>
+        </label>
+        <label>Costo por unidad
+          <input id="purchaseCost" type="number" min="0" step="1" inputmode="numeric" required>
+        </label>
+        <label>Proveedor
+          <select id="purchaseSupplier"></select>
+        </label>
+        <fieldset class="segmented">
+          <legend>Estado de compra</legend>
+          <label><input type="radio" name="purchaseDebtStatus" value="pagado" checked><span>Pagado</span></label>
+          <label><input type="radio" name="purchaseDebtStatus" value="debe"><span>Se debe</span></label>
+        </fieldset>
+        <label>Persona a quien se debe
+          <input id="purchaseDebtPerson" placeholder="Opcional si queda deuda">
+        </label>
+        <label>Abono inicial
+          <input id="purchasePaid" type="number" min="0" step="1" inputmode="numeric" value="0">
+        </label>
+        <label>Nota
+          <input id="purchaseNote" placeholder="Opcional">
+        </label>
+        <div class="preview-row">
+          <span>Deuda nueva</span>
+          <strong id="purchaseDebtPreview">$0</strong>
+        </div>
+        <button class="primary" type="submit">Guardar compra</button>
+      </form>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Compras pendientes</h2>
+        </div>
+        <div class="list" id="openPurchases"></div>
+      </section>
+    </section>
+
+    <section class="view" id="payView">
+      <form class="card form" id="paymentForm">
+        <div class="card-head">
+          <h2>Pago a proveedor</h2>
+        </div>
+        <label>Crear proveedor
+          <div class="add-row">
+            <input id="newSupplierName" placeholder="Nombre proveedor">
+            <button class="secondary" type="button" id="addSupplierBtn">Agregar</button>
+          </div>
+        </label>
+        <label>Proveedor / deuda pendiente
+          <select id="paymentSupplier"></select>
+        </label>
+        <label>Fecha de pago
+          <input id="paymentDate" type="date" required>
+        </label>
+        <label>Monto pagado
+          <input id="paymentAmount" type="number" min="1" step="1" inputmode="numeric" required>
+        </label>
+        <label>Nota
+          <input id="paymentNote" placeholder="Ej: transferencia">
+        </label>
+        <button class="primary" type="submit">Registrar pago</button>
+      </form>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Deudas por proveedor</h2>
+        </div>
+        <div class="list" id="supplierDebts"></div>
+      </section>
+    </section>
+
+    <section class="view" id="inventoryView">
+      <section class="card">
+        <div class="card-head">
+          <h2>Inventario</h2>
+          <button class="secondary small-button" type="button" id="quickProductBtn">Nuevo producto</button>
+        </div>
+        <div class="list" id="inventoryList"></div>
+      </section>
+    </section>
+
+    <section class="view" id="dashboardView">
+      <section class="card dashboard-header">
+        <div class="card-head">
+          <h2>Panel del negocio</h2>
+        </div>
+        <label>Mes
+          <select id="dashboardMonth"></select>
+        </label>
+        <div class="kpi-grid">
+          <article class="kpi-card strong">
+            <span>Ventas del mes</span>
+            <strong id="monthSales">$0</strong>
+            <small id="monthSold">0 láminas vendidas</small>
+          </article>
+          <article class="kpi-card">
+            <span>Ganancia bruta estimada</span>
+            <strong id="monthGrossProfit">$0</strong>
+            <small id="monthMargin">0% margen</small>
+          </article>
+          <article class="kpi-card">
+            <span>Flujo del mes</span>
+            <strong id="monthCashFlow">$0</strong>
+            <small>Ventas menos compras</small>
+          </article>
+          <article class="kpi-card">
+            <span>Pendiente de cobro</span>
+            <strong id="monthPending">$0</strong>
+            <small id="pendingCount">0 ventas pendientes</small>
+          </article>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Datos críticos</h2>
+        </div>
+        <div class="report-grid compact-report">
+          <div><span>Compras del mes</span><strong id="monthPurchases">$0</strong></div>
+          <div><span>Láminas compradas</span><strong id="monthBought">0</strong></div>
+          <div><span>Ticket promedio</span><strong id="monthAverage">$0</strong></div>
+          <div><span>Stock total</span><strong id="dashboardStockTotal">0</strong></div>
+          <div><span>Stock crítico</span><strong id="lowStockCount">0</strong></div>
+          <div><span>Deuda proveedores</span><strong id="providerDebtTotal">$0</strong></div>
+        </div>
+      </section>
+
+      <section class="card chart-card">
+        <div class="card-head">
+          <h2>Tendencia mensual</h2>
+        </div>
+        <div class="bar-chart" id="monthlyTrendChart"></div>
+      </section>
+
+      <section class="card chart-card">
+        <div class="card-head">
+          <h2>Medios de pago</h2>
+        </div>
+        <div class="payment-bars">
+          <div class="pay-row"><span>Efectivo</span><div><i id="cashBar"></i></div><strong id="monthCash">$0</strong></div>
+          <div class="pay-row"><span>Tarjeta/transf.</span><div><i id="cardBar"></i></div><strong id="monthCard">$0</strong></div>
+          <div class="pay-row"><span>Pendiente</span><div><i id="pendingBar"></i></div><strong id="monthPendingBarValue">$0</strong></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Productos más vendidos</h2>
+        </div>
+        <div class="list" id="topProductsList"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Alertas</h2>
+        </div>
+        <div class="list" id="businessAlerts"></div>
+      </section>
+    </section>
+
+    <section class="view" id="historyView">
+      <section class="card">
+        <div class="card-head">
+          <h2>Historial</h2>
+          <select id="historyFilter">
+            <option value="sales">Ventas</option>
+            <option value="purchases">Compras</option>
+            <option value="payments">Pagos</option>
+            <option value="debtors">Deudores</option>
+            <option value="suppliers">Proveedores</option>
+          </select>
+        </div>
+        <div class="list long-list" id="historyList"></div>
+      </section>
+
+      <section class="card backup-card">
+        <h2>Respaldo</h2>
+        <p>Exporta tus datos seguido. Si Safari borra los datos del sitio, el respaldo JSON permite recuperarlos.</p>
+        <button class="secondary" id="exportBtn">Exportar respaldo</button>
+        <button class="secondary" id="showBackupBtn">Mostrar respaldo</button>
+        <textarea id="backupText" class="backup-text" readonly placeholder="El respaldo aparecerá aquí."></textarea>
+        <label class="file-button">Importar respaldo
+          <input id="importFile" type="file" accept="application/json">
+        </label>
+        <button class="danger" id="resetBtn">Borrar todo</button>
+      </section>
+    </section>
+  </main>
+
+  <nav class="tabbar" aria-label="Navegación">
+    <button class="tab active" data-tab="sell">Vender</button>
+    <button class="tab" data-tab="buy">Comprar</button>
+    <button class="tab" data-tab="pay">Pagar</button>
+    <button class="tab" data-tab="inventory">Invent.</button>
+    <button class="tab" data-tab="dashboard">Panel</button>
+    <button class="tab" data-tab="history">Historial</button>
+  </nav>
+
+  <dialog id="editDialog" class="app-dialog">
+    <form method="dialog" class="card form" id="editForm">
+      <div class="card-head">
+        <h2 id="editTitle">Modificar</h2>
+      </div>
+      <div class="edit-fields" id="editFields"></div>
+      <div class="modal-actions">
+        <button class="secondary" type="button" id="cancelEditBtn">Cancelar</button>
+        <button class="primary" type="submit">Guardar cambios</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="pinDialog" class="app-dialog">
+    <form method="dialog" class="card form" id="pinForm">
+      <div class="card-head">
+        <h2>Confirmar eliminación</h2>
+      </div>
+      <p class="muted-text">Ingresa la clave 4818 para eliminar el registro.</p>
+      <label>Clave
+        <input id="pinInput" type="password" inputmode="numeric" autocomplete="off" placeholder="••••">
+      </label>
+      <div class="modal-actions">
+        <button class="secondary" type="button" id="cancelPinBtn">Cancelar</button>
+        <button class="danger" type="submit">Eliminar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast" id="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>

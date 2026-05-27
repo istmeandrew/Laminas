@@ -1,6 +1,6 @@
 const DB_NAME = "laminas-mundial-pos-db";
 const DB_VERSION = 1;
-const APP_VERSION = "20260527-1";
+const APP_VERSION = "20260527-2";
 const STORE_NAMES = ["products", "suppliers", "sales", "purchases", "payments", "settings"];
 const DEFAULT_PRODUCT_ID = "product-laminas-mundial";
 const DEFAULT_SUPPLIER_ID = "supplier-general";
@@ -525,9 +525,34 @@ function renderDashboard() {
   setBar("#cardBar", card);
   setBar("#pendingBar", pending);
 
+  renderDailyPaymentSummary();
   renderMonthlyTrend(select.value);
   renderTopProducts(sales, avgCostByProduct);
   renderBusinessAlerts({ pendingRows, lowStock, providerDebt, grossProfit, salesTotal, stockTotal });
+}
+
+function renderDailyPaymentSummary() {
+  const start = startOfDay(new Date());
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  const sales = state.sales.filter((sale) => isInRange(sale.createdAt, start, end));
+  const groups = {
+    efectivo: { amount: 0, units: 0 },
+    tarjeta: { amount: 0, units: 0 },
+    pendiente: { amount: 0, units: 0 }
+  };
+  for (const sale of sales) {
+    const key = groups[sale.paymentStatus] ? sale.paymentStatus : "efectivo";
+    groups[key].amount += saleTotal(sale);
+    groups[key].units += Number(sale.quantity) || 0;
+  }
+  $("#dailyPaymentDate").textContent = new Intl.DateTimeFormat("es-CL", { day: "2-digit", month: "short" }).format(start);
+  $("#todayCash").textContent = money(groups.efectivo.amount);
+  $("#todayCashUnits").textContent = `${units(groups.efectivo.units)} vendidas`;
+  $("#todayCard").textContent = money(groups.tarjeta.amount);
+  $("#todayCardUnits").textContent = `${units(groups.tarjeta.units)} vendidas`;
+  $("#todayPending").textContent = money(groups.pendiente.amount);
+  $("#todayPendingUnits").textContent = `${units(groups.pendiente.units)} pendientes`;
 }
 
 function renderMonthlyTrend(selectedKey) {

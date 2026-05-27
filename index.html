@@ -9,10 +9,10 @@
   <meta name="apple-mobile-web-app-title" content="Láminas POS">
   <meta name="description" content="Punto de venta local para láminas del mundial, inventario, compras, pagos y respaldo.">
   <title>Láminas Mundial POS</title>
-  <link rel="manifest" href="manifest.webmanifest?v=20260527-1">
-  <link rel="icon" href="icon.svg?v=20260527-1" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=20260527-1">
-  <link rel="stylesheet" href="styles.css?v=20260527-1">
+  <link rel="manifest" href="manifest.webmanifest?v=20260527-2">
+  <link rel="icon" href="icon.svg?v=20260527-2" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=20260527-2">
+  <link rel="stylesheet" href="styles.css?v=20260527-2">
 </head>
 <body>
   <main class="app">
@@ -255,6 +255,30 @@
         </div>
       </section>
 
+      <section class="card chart-card">
+        <div class="card-head">
+          <h2>Ventas de hoy</h2>
+          <span id="dailyPaymentDate">Hoy</span>
+        </div>
+        <div class="daily-payment-grid">
+          <article>
+            <span>Efectivo</span>
+            <strong id="todayCash">$0</strong>
+            <small id="todayCashUnits">0 láminas</small>
+          </article>
+          <article>
+            <span>Tarjeta/transf.</span>
+            <strong id="todayCard">$0</strong>
+            <small id="todayCardUnits">0 láminas</small>
+          </article>
+          <article>
+            <span>Pendiente</span>
+            <strong id="todayPending">$0</strong>
+            <small id="todayPendingUnits">0 láminas</small>
+          </article>
+        </div>
+      </section>
+
       <section class="card">
         <div class="card-head">
           <h2>Productos más vendidos</h2>
@@ -339,6 +363,6 @@
   </dialog>
 
   <div class="toast" id="toast"></div>
-  <script src="app.js?v=20260527-1"></script>
+  <script src="app.js?v=20260527-2"></script>
 </body>
 </html>

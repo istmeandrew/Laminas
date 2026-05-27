@@ -551,6 +551,35 @@ textarea {
   background: #fff8ef;
 }
 
+.daily-payment-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.daily-payment-grid article {
+  min-height: 98px;
+  display: grid;
+  align-content: space-between;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fffefa;
+  padding: 12px 10px;
+}
+
+.daily-payment-grid span,
+.daily-payment-grid small {
+  color: var(--muted);
+  font-size: .78rem;
+  font-weight: 900;
+}
+
+.daily-payment-grid strong {
+  font-size: clamp(1rem, 4.8vw, 1.45rem);
+  line-height: 1;
+}
+
 .backup-card {
   display: grid;
   gap: 10px;
@@ -698,5 +727,9 @@ textarea {
   .pay-row strong {
     grid-column: 2;
     justify-self: end;
+  }
+
+  .daily-payment-grid {
+    grid-template-columns: 1fr;
   }
 }

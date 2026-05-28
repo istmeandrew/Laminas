@@ -245,6 +245,12 @@ textarea {
   gap: 8px;
 }
 
+.customer-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 8px;
+}
+
 .segmented {
   border: 0;
   padding: 0;
@@ -384,6 +390,42 @@ textarea {
 .action-button.delete {
   background: #fee4e2;
   color: var(--danger);
+}
+
+.reservation-item {
+  align-items: flex-start;
+}
+
+.reservation-item.delivered {
+  opacity: .78;
+}
+
+.wide-actions {
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.deliver-button {
+  min-height: 38px;
+  border-radius: 999px;
+  color: var(--green);
+}
+
+.status-pill {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0 10px;
+  font-size: .76rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.status-pill.done {
+  background: rgba(15, 122, 72, .12);
+  color: var(--green);
 }
 
 .status-list {
@@ -621,7 +663,7 @@ textarea {
   bottom: 0;
   z-index: 10;
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 4px;
   padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
   background: rgba(255, 253, 244, .94);
@@ -630,12 +672,17 @@ textarea {
 }
 
 .tab {
+  min-width: 0;
   min-height: 48px;
   border-radius: 13px;
   background: transparent;
   color: var(--muted);
-  font-size: .78rem;
+  font-size: .72rem;
   font-weight: 900;
+  padding: 0 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tab.active {
@@ -725,6 +772,10 @@ textarea {
     grid-template-columns: 1fr;
   }
 
+  .customer-row {
+    grid-template-columns: 1fr;
+  }
+
   .report-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -744,5 +795,11 @@ textarea {
 
   .daily-payment-grid {
     grid-template-columns: 1fr;
+  }
+
+  .tab {
+    min-height: 46px;
+    border-radius: 10px;
+    font-size: .66rem;
   }
 }

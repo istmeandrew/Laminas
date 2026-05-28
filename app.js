@@ -1,7 +1,7 @@
 const DB_NAME = "laminas-mundial-pos-db";
-const DB_VERSION = 1;
-const APP_VERSION = "20260527-3";
-const STORE_NAMES = ["products", "suppliers", "sales", "purchases", "payments", "settings"];
+const DB_VERSION = 2;
+const APP_VERSION = "20260528-1";
+const STORE_NAMES = ["products", "suppliers", "sales", "purchases", "payments", "customers", "reservations", "settings"];
 const DEFAULT_PRODUCT_ID = "product-laminas-mundial";
 const DEFAULT_SUPPLIER_ID = "supplier-general";
 const ADMIN_PIN = "4818";
@@ -17,6 +17,8 @@ const state = {
   sales: [],
   purchases: [],
   payments: [],
+  customers: [],
+  reservations: [],
   settings: {
     salePricePresets: [500, 700, 1000, 1500],
     lastSalePrice: 1000
@@ -186,6 +188,12 @@ function supplierName(id) {
   return state.suppliers.find((supplier) => supplier.id === id)?.name || "Proveedor eliminado";
 }
 
+function customerName(id) {
+  const customer = state.customers.find((row) => row.id === id);
+  if (!customer) return "Cliente eliminado";
+  return `${customer.firstName || ""} ${customer.lastName || ""}`.trim() || "Cliente sin nombre";
+}
+
 function activeProducts() {
   return state.products.filter((product) => product.active !== false).sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -194,8 +202,16 @@ function activeSuppliers() {
   return state.suppliers.filter((supplier) => supplier.active !== false).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+function activeCustomers() {
+  return state.customers.filter((customer) => customer.active !== false).sort((a, b) => customerName(a.id).localeCompare(customerName(b.id)));
+}
+
 function saleTotal(sale) {
   return (Number(sale.quantity) || 0) * (Number(sale.unitPrice) || 0);
+}
+
+function reservationTotal(reservation) {
+  return (Number(reservation.quantity) || 0) * (Number(reservation.unitPrice) || 0);
 }
 
 function purchaseTotal(purchase) {
@@ -263,12 +279,14 @@ function totalStock() {
 }
 
 async function loadState() {
-  const [products, suppliers, sales, purchases, payments, settingsRows] = await Promise.all([
+  const [products, suppliers, sales, purchases, payments, customers, reservations, settingsRows] = await Promise.all([
     getAll("products"),
     getAll("suppliers"),
     getAll("sales"),
     getAll("purchases"),
     getAll("payments"),
+    getAll("customers"),
+    getAll("reservations"),
     getAll("settings")
   ]);
 
@@ -299,6 +317,8 @@ async function loadState() {
   state.sales = sales.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   state.purchases = purchases.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   state.payments = payments.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  state.customers = customers.sort((a, b) => `${a.firstName || ""} ${a.lastName || ""}`.localeCompare(`${b.firstName || ""} ${b.lastName || ""}`));
+  state.reservations = reservations.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   state.settings = { ...state.settings, ...(settingsRows.find((row) => row.id === "main") || {}) };
 }
 
@@ -312,7 +332,7 @@ function fillSelect(select, rows, getLabel) {
 
 function setDefaultDates() {
   const today = todayInputValue();
-  for (const input of ["#saleDate", "#purchaseDate", "#paymentDate"]) {
+  for (const input of ["#saleDate", "#reservationDate", "#purchaseDate", "#paymentDate"]) {
     const element = $(input);
     if (element && !element.value) element.value = today;
   }
@@ -346,14 +366,22 @@ function renderPriceButtons() {
 function renderSelectors() {
   const products = activeProducts();
   const suppliers = activeSuppliers();
+  const customers = activeCustomers();
   fillSelect($("#saleProduct"), products, (product) => product.name);
+  fillSelect($("#reservationProduct"), products, (product) => product.name);
+  fillSelect($("#reservationCustomer"), customers, (customer) => {
+    const phone = customer.phone ? ` · ${customer.phone}` : "";
+    return `${customerName(customer.id)}${phone}`;
+  });
   fillSelect($("#purchaseProduct"), products, (product) => product.name);
   fillSelect($("#purchaseSupplier"), suppliers, (supplier) => supplier.name);
   fillSelect($("#paymentSupplier"), suppliers.map((supplier) => ({ ...supplier, debt: supplierDebt(supplier.id) })), (supplier) => {
     const debt = supplier.debt;
     return `${supplier.name} · ${debt < 0 ? "saldo a favor " : "deuda "}${money(Math.abs(debt))}`;
   });
-  if (!$("#salePrice").value) $("#salePrice").value = state.settings.lastSalePrice || state.settings.salePricePresets[0] || 1000;
+  const defaultPrice = state.settings.lastSalePrice ?? state.settings.salePricePresets[0] ?? 1000;
+  if (!$("#salePrice").value) $("#salePrice").value = defaultPrice;
+  if (!$("#reservationPrice").value) $("#reservationPrice").value = defaultPrice;
   renderPriceButtons();
 }
 
@@ -361,6 +389,12 @@ function updateSalePreview() {
   const qty = Number($("#saleQty").value) || 0;
   const price = Number($("#salePrice").value) || 0;
   $("#salePreview").textContent = money(qty * price);
+}
+
+function updateReservationPreview() {
+  const qty = Number($("#reservationQty").value) || 0;
+  const price = Number($("#reservationPrice").value) || 0;
+  $("#reservationPreview").textContent = money(qty * price);
 }
 
 function updatePurchasePreview() {
@@ -403,6 +437,13 @@ function purchaseMeta(purchase) {
   const debtText = debt > 0 ? ` · debe ${money(debt)}` : " · pagado";
   const person = purchase.debtPerson ? ` · ${purchase.debtPerson}` : "";
   return `${shortDate(purchase.createdAt)} · ${productName(purchase.productId)} · ${units(purchase.quantity)} · ${supplierName(purchase.supplierId)}${debtText}${person}`;
+}
+
+function reservationMeta(reservation) {
+  const status = reservation.status === "entregado" ? "entregada" : "pendiente";
+  const note = reservation.note ? ` · ${reservation.note}` : "";
+  const phone = state.customers.find((customer) => customer.id === reservation.customerId)?.phone;
+  return `${shortDate(reservation.createdAt)} · ${productName(reservation.productId)} · ${units(reservation.quantity)} · ${customerName(reservation.customerId)}${phone ? ` · ${phone}` : ""} · ${status}${note}`;
 }
 
 function renderRecent() {
@@ -450,6 +491,50 @@ function renderRecent() {
     }),
     "No hay proveedores."
   );
+}
+
+function renderReservations() {
+  const pending = state.reservations.filter((reservation) => reservation.status !== "entregado");
+  const delivered = state.reservations.filter((reservation) => reservation.status === "entregado").slice(0, 8);
+  const rows = [
+    ...pending.map((reservation) => `
+      <article class="list-item reservation-item">
+        <div class="list-main">
+          <span class="list-title">${money(reservationTotal(reservation))}</span>
+          <span class="item-meta">${reservationMeta(reservation)}</span>
+        </div>
+        <div class="item-actions wide-actions">
+          <button class="secondary deliver-button" type="button" data-deliver-reservation="${reservation.id}">Entregado</button>
+          <button class="action-button" data-edit-reservation="${reservation.id}" title="Modificar">✎</button>
+          <button class="action-button delete" data-delete-reservation="${reservation.id}" title="Eliminar">×</button>
+        </div>
+      </article>
+    `),
+    ...delivered.map((reservation) => `
+      <article class="list-item reservation-item delivered">
+        <div class="list-main">
+          <span class="list-title">${money(reservationTotal(reservation))}</span>
+          <span class="item-meta">${reservationMeta(reservation)}${reservation.deliveredAt ? ` · venta ${dateTime(reservation.deliveredAt)}` : ""}</span>
+        </div>
+        <div class="item-actions">
+          <span class="status-pill done">Entregada</span>
+          <button class="action-button" data-edit-reservation="${reservation.id}" title="Modificar">✎</button>
+          <button class="action-button delete" data-delete-reservation="${reservation.id}" title="Eliminar">×</button>
+        </div>
+      </article>
+    `)
+  ];
+  $("#reservationPendingTotal").textContent = `${pending.length} ${pending.length === 1 ? "pendiente" : "pendientes"}`;
+  renderList($("#reservationList"), rows, "Aún no hay reservas.");
+  $("#reservationList").querySelectorAll("[data-deliver-reservation]").forEach((button) => {
+    button.addEventListener("click", () => deliverReservation(button.dataset.deliverReservation));
+  });
+  $("#reservationList").querySelectorAll("[data-edit-reservation]").forEach((button) => {
+    button.addEventListener("click", () => openEdit("reservations", button.dataset.editReservation));
+  });
+  $("#reservationList").querySelectorAll("[data-delete-reservation]").forEach((button) => {
+    button.addEventListener("click", () => requestDelete("reservations", button.dataset.deleteReservation));
+  });
 }
 
 function renderInventory() {
@@ -680,6 +765,17 @@ function renderHistory() {
       </article>
     `);
   }
+  if (filter === "reservations") {
+    rows = state.reservations.map((reservation) => `
+      <article class="list-item">
+        <div class="list-main">
+          <span class="list-title">${money(reservationTotal(reservation))}</span>
+          <span class="item-meta">${reservationMeta(reservation)}</span>
+        </div>
+        ${historyActions("reservations", reservation.id)}
+      </article>
+    `);
+  }
   if (filter === "purchases") {
     rows = state.purchases.map((purchase) => `
       <article class="list-item">
@@ -738,10 +834,12 @@ function renderAll() {
   renderSelectors();
   renderSummary();
   renderRecent();
+  renderReservations();
   renderInventory();
   renderDashboard();
   renderHistory();
   updateSalePreview();
+  updateReservationPreview();
   updatePurchasePreview();
 }
 
@@ -776,6 +874,27 @@ async function addSupplier(name) {
   await put("suppliers", supplier);
   await loadState();
   return supplier;
+}
+
+async function addCustomer(firstName, lastName, phone) {
+  const cleanFirstName = firstName.trim();
+  const cleanLastName = lastName.trim();
+  const cleanPhone = phone.trim();
+  if (!cleanFirstName || !cleanLastName) return null;
+  const fullName = `${cleanFirstName} ${cleanLastName}`.toLowerCase();
+  const existing = activeCustomers().find((customer) => `${customer.firstName || ""} ${customer.lastName || ""}`.trim().toLowerCase() === fullName);
+  if (existing) return existing;
+  const customer = {
+    id: uid("customer"),
+    firstName: cleanFirstName,
+    lastName: cleanLastName,
+    phone: cleanPhone,
+    active: true,
+    createdAt: new Date().toISOString()
+  };
+  await put("customers", customer);
+  await loadState();
+  return customer;
 }
 
 function editField(label, id, type, value, attrs = "") {
@@ -832,6 +951,23 @@ function openEdit(type, id) {
       editField("Fecha", "editDate", "date", todayInputValueFromIso(payment.createdAt), "required"),
       editField("Monto", "editAmount", "number", payment.amount, "min='1' step='1' required"),
       editField("Nota", "editNote", "text", payment.note || "")
+    ].join("");
+  }
+  if (type === "reservations") {
+    const reservation = state.reservations.find((row) => row.id === id);
+    title.textContent = "Modificar reserva";
+    fields.innerHTML = [
+      editSelect("Producto", "editProductId", activeProducts(), reservation.productId, (row) => row.name),
+      editSelect("Cliente", "editCustomerId", activeCustomers(), reservation.customerId, (row) => customerName(row.id)),
+      editField("Fecha reserva", "editDate", "date", todayInputValueFromIso(reservation.createdAt), "required"),
+      editField("Cantidad", "editQuantity", "number", reservation.quantity, "min='1' step='1' required"),
+      editField("Precio al entregar", "editUnitPrice", "number", reservation.unitPrice, "min='0' step='1' required"),
+      `<label>Pago al entregar<select id="editPaymentStatus">
+        <option value="efectivo" ${reservation.paymentStatus === "efectivo" ? "selected" : ""}>Efectivo</option>
+        <option value="tarjeta" ${reservation.paymentStatus === "tarjeta" ? "selected" : ""}>Tarjeta</option>
+        <option value="pendiente" ${reservation.paymentStatus === "pendiente" ? "selected" : ""}>Pendiente</option>
+      </select></label>`,
+      editField("Nota", "editNote", "text", reservation.note || "")
     ].join("");
   }
   if (type === "suppliers") {
@@ -897,6 +1033,20 @@ async function saveEdit(event) {
       updatedAt: new Date().toISOString()
     });
   }
+  if (type === "reservations") {
+    const reservation = state.reservations.find((row) => row.id === id);
+    await put("reservations", {
+      ...reservation,
+      productId: $("#editProductId").value,
+      customerId: $("#editCustomerId").value,
+      createdAt: dateKeepingTime(reservation.createdAt, $("#editDate").value),
+      quantity: Number($("#editQuantity").value),
+      unitPrice: Number($("#editUnitPrice").value),
+      paymentStatus: $("#editPaymentStatus").value,
+      note: $("#editNote").value.trim(),
+      updatedAt: new Date().toISOString()
+    });
+  }
   if (type === "suppliers") {
     const supplier = state.suppliers.find((row) => row.id === id);
     await put("suppliers", {
@@ -948,6 +1098,8 @@ function backupPayload() {
     sales: state.sales,
     purchases: state.purchases,
     payments: state.payments,
+    customers: state.customers,
+    reservations: state.reservations,
     settings: state.settings
   };
 }
@@ -1009,6 +1161,8 @@ async function importData(file) {
   for (const sale of payload.sales || []) await put("sales", sale);
   for (const purchase of payload.purchases || []) await put("purchases", purchase);
   for (const payment of payload.payments || []) await put("payments", payment);
+  for (const customer of payload.customers || []) await put("customers", customer);
+  for (const reservation of payload.reservations || []) await put("reservations", reservation);
   await put("settings", { id: "main", ...(payload.settings || {}) });
   await loadState();
   renderAll();
@@ -1049,9 +1203,20 @@ function bindEvents() {
   $("#dailyPaymentDate").addEventListener("change", renderDailyPaymentSummary);
   $("#saleQty").addEventListener("input", updateSalePreview);
   $("#salePrice").addEventListener("input", () => {
-    state.settings.lastSalePrice = Number($("#salePrice").value) || state.settings.lastSalePrice;
+    const rawPrice = $("#salePrice").value;
+    const price = Number(rawPrice);
+    if (rawPrice !== "" && !Number.isNaN(price) && price >= 0) state.settings.lastSalePrice = price;
     saveSettings();
     updateSalePreview();
+    renderPriceButtons();
+  });
+  $("#reservationQty").addEventListener("input", updateReservationPreview);
+  $("#reservationPrice").addEventListener("input", () => {
+    const rawPrice = $("#reservationPrice").value;
+    const price = Number(rawPrice);
+    if (rawPrice !== "" && !Number.isNaN(price) && price >= 0) state.settings.lastSalePrice = price;
+    saveSettings();
+    updateReservationPreview();
     renderPriceButtons();
   });
   $("#purchaseQty").addEventListener("input", updatePurchasePreview);
@@ -1094,7 +1259,21 @@ function bindEvents() {
       toast("Proveedor creado");
     }
   });
+  $("#addCustomerBtn").addEventListener("click", async () => {
+    const customer = await addCustomer($("#newCustomerFirstName").value, $("#newCustomerLastName").value, $("#newCustomerPhone").value);
+    if (!customer) {
+      toast("Agrega nombre y apellido del cliente");
+      return;
+    }
+    $("#newCustomerFirstName").value = "";
+    $("#newCustomerLastName").value = "";
+    $("#newCustomerPhone").value = "";
+    renderSelectors();
+    $("#reservationCustomer").value = customer.id;
+    toast("Cliente agregado");
+  });
   $("#saleForm").addEventListener("submit", saveSale);
+  $("#reservationForm").addEventListener("submit", saveReservation);
   $("#purchaseForm").addEventListener("submit", savePurchase);
   $("#paymentForm").addEventListener("submit", savePayment);
   $("#editForm").addEventListener("submit", saveEdit);
@@ -1125,6 +1304,72 @@ async function saveSale(event) {
   await loadState();
   renderAll();
   toast("Venta guardada");
+}
+
+async function saveReservation(event) {
+  event.preventDefault();
+  if (!$("#reservationCustomer").value) {
+    toast("Crea o selecciona un cliente");
+    return;
+  }
+  const reservation = {
+    id: uid("reservation"),
+    productId: $("#reservationProduct").value,
+    customerId: $("#reservationCustomer").value,
+    createdAt: inputDateToIso($("#reservationDate").value),
+    quantity: Number($("#reservationQty").value),
+    unitPrice: Number($("#reservationPrice").value),
+    paymentStatus: activeRadioValue("reservationPaymentStatus"),
+    status: "pendiente",
+    note: $("#reservationNote").value.trim()
+  };
+  await put("reservations", reservation);
+  state.settings.lastSalePrice = reservation.unitPrice;
+  if (!state.settings.salePricePresets.includes(reservation.unitPrice)) {
+    state.settings.salePricePresets.push(reservation.unitPrice);
+  }
+  await saveSettings();
+  $("#reservationQty").value = "";
+  $("#reservationNote").value = "";
+  await loadState();
+  renderAll();
+  toast("Reserva guardada");
+}
+
+async function deliverReservation(id) {
+  const reservation = state.reservations.find((row) => row.id === id);
+  if (!reservation || reservation.status === "entregado") return;
+  const stockRow = stockByProduct().find((row) => row.product.id === reservation.productId);
+  const available = stockRow?.stock || 0;
+  const qty = Number(reservation.quantity) || 0;
+  if (available < qty) {
+    toast(`Stock insuficiente: quedan ${units(available)}`);
+    return;
+  }
+  const now = new Date().toISOString();
+  const customer = state.customers.find((row) => row.id === reservation.customerId);
+  const customerLabel = `${customerName(reservation.customerId)}${customer?.phone ? ` · ${customer.phone}` : ""}`;
+  const sale = {
+    id: uid("sale"),
+    productId: reservation.productId,
+    createdAt: now,
+    quantity: qty,
+    unitPrice: Number(reservation.unitPrice) || 0,
+    paymentStatus: reservation.paymentStatus || "efectivo",
+    note: `Reserva entregada · ${customerLabel}${reservation.note ? ` · ${reservation.note}` : ""}`,
+    reservationId: reservation.id
+  };
+  await put("sales", sale);
+  await put("reservations", {
+    ...reservation,
+    status: "entregado",
+    deliveredAt: now,
+    saleId: sale.id,
+    updatedAt: now
+  });
+  await loadState();
+  renderAll();
+  toast("Reserva entregada y venta creada");
 }
 
 async function savePurchase(event) {

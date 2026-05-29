@@ -1,6 +1,6 @@
 const DB_NAME = "laminas-mundial-pos-db";
 const DB_VERSION = 2;
-const APP_VERSION = "20260528-1";
+const APP_VERSION = "20260528-2";
 const STORE_NAMES = ["products", "suppliers", "sales", "purchases", "payments", "customers", "reservations", "settings"];
 const DEFAULT_PRODUCT_ID = "product-laminas-mundial";
 const DEFAULT_SUPPLIER_ID = "supplier-general";
@@ -10,6 +10,8 @@ let db;
 let pendingDelete = null;
 let pendingEdit = null;
 let toastTimer;
+let saleDraftItems = [];
+let reservationDraftItems = [];
 
 const state = {
   products: [],
@@ -180,6 +182,33 @@ function escapeHtml(value) {
     .replaceAll("'", "&#039;");
 }
 
+function chileMobileLocalDigits(value) {
+  let digits = String(value ?? "").replace(/\D/g, "");
+  if (digits.startsWith("569")) digits = digits.slice(3);
+  else if (digits.startsWith("56")) digits = digits.slice(2);
+  if (digits.startsWith("9") && digits.length > 8) digits = digits.slice(1);
+  return digits.slice(0, 8);
+}
+
+function formatChileMobilePhone(value) {
+  const digits = chileMobileLocalDigits(value);
+  if (!digits) return "";
+  return `+56 9 ${digits.slice(0, 4)}${digits.length > 4 ? ` ${digits.slice(4)}` : ""}`.trim();
+}
+
+function whatsappUrl(phone) {
+  const digits = chileMobileLocalDigits(phone);
+  return digits.length === 8 ? `https://wa.me/569${digits}` : "";
+}
+
+function whatsappIcon() {
+  return `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12.02 3.2a8.55 8.55 0 0 0-7.28 13.05l-.94 3.42 3.51-.92a8.55 8.55 0 1 0 4.71-15.55Zm0 1.53a7.03 7.03 0 0 1 5.97 10.75 7.03 7.03 0 0 1-9.89 1.91l-.26-.16-2.1.55.56-2.04-.17-.27a7.03 7.03 0 0 1 5.89-10.74Zm-2.5 3.68c-.15 0-.39.05-.6.27-.2.22-.78.76-.78 1.86s.8 2.16.91 2.31c.11.15 1.55 2.48 3.82 3.38 1.89.75 2.28.6 2.69.56.41-.04 1.32-.54 1.51-1.06.19-.52.19-.97.13-1.06-.06-.09-.21-.15-.45-.27-.24-.12-1.4-.69-1.62-.77-.22-.08-.38-.12-.54.12-.16.24-.62.77-.76.93-.14.16-.28.18-.52.06-.24-.12-1.01-.37-1.93-1.19-.71-.63-1.19-1.41-1.33-1.65-.14-.24-.02-.37.1-.49.11-.1.24-.27.36-.4.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.54-1.3-.74-1.78-.2-.47-.39-.41-.54-.41h-.45Z"/>
+    </svg>
+  `;
+}
+
 function productName(id) {
   return state.products.find((product) => product.id === id)?.name || "Producto eliminado";
 }
@@ -206,12 +235,60 @@ function activeCustomers() {
   return state.customers.filter((customer) => customer.active !== false).sort((a, b) => customerName(a.id).localeCompare(customerName(b.id)));
 }
 
+function normalizeItems(row) {
+  if (Array.isArray(row.items) && row.items.length) {
+    return row.items
+      .map((item) => ({
+        productId: item.productId,
+        quantity: Number(item.quantity) || 0,
+        unitPrice: Number(item.unitPrice) || 0
+      }))
+      .filter((item) => item.productId && item.quantity > 0);
+  }
+  const quantity = Number(row.quantity) || 0;
+  if (!row.productId || quantity <= 0) return [];
+  return [{ productId: row.productId, quantity, unitPrice: Number(row.unitPrice) || 0 }];
+}
+
+function saleItems(sale) {
+  return normalizeItems(sale);
+}
+
+function reservationItems(reservation) {
+  return normalizeItems(reservation);
+}
+
+function itemsTotal(items) {
+  return items.reduce((sum, item) => sum + ((Number(item.quantity) || 0) * (Number(item.unitPrice) || 0)), 0);
+}
+
+function itemsQuantity(items) {
+  return items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+}
+
+function primaryProductId(items) {
+  return items[0]?.productId || "";
+}
+
+function averageUnitPrice(items) {
+  const quantity = itemsQuantity(items);
+  return quantity > 0 ? Math.round(itemsTotal(items) / quantity) : 0;
+}
+
+function itemsSummary(items) {
+  if (!items.length) return "Sin productos";
+  if (items.length === 1) return `${productName(items[0].productId)} · ${units(items[0].quantity)}`;
+  const names = items.slice(0, 2).map((item) => `${productName(item.productId)} (${units(item.quantity)})`);
+  const extra = items.length > 2 ? ` +${items.length - 2} más` : "";
+  return `${items.length} productos · ${names.join(" · ")}${extra}`;
+}
+
 function saleTotal(sale) {
-  return (Number(sale.quantity) || 0) * (Number(sale.unitPrice) || 0);
+  return itemsTotal(saleItems(sale));
 }
 
 function reservationTotal(reservation) {
-  return (Number(reservation.quantity) || 0) * (Number(reservation.unitPrice) || 0);
+  return itemsTotal(reservationItems(reservation));
 }
 
 function purchaseTotal(purchase) {
@@ -262,10 +339,12 @@ function stockByProduct() {
     row.costTotal += total;
   }
   for (const sale of state.sales) {
-    if (!stock.has(sale.productId)) {
-      stock.set(sale.productId, { product: { id: sale.productId, name: productName(sale.productId) }, bought: 0, sold: 0, stock: 0, avgCost: 0, costTotal: 0 });
+    for (const item of saleItems(sale)) {
+      if (!stock.has(item.productId)) {
+        stock.set(item.productId, { product: { id: item.productId, name: productName(item.productId) }, bought: 0, sold: 0, stock: 0, avgCost: 0, costTotal: 0 });
+      }
+      stock.get(item.productId).sold += Number(item.quantity) || 0;
     }
-    stock.get(sale.productId).sold += Number(sale.quantity) || 0;
   }
   for (const row of stock.values()) {
     row.stock = row.bought - row.sold;
@@ -385,16 +464,97 @@ function renderSelectors() {
   renderPriceButtons();
 }
 
+function readFormItem(productSelector, quantitySelector, priceSelector) {
+  const quantity = Number($(quantitySelector).value) || 0;
+  if (quantity <= 0) return null;
+  return {
+    productId: $(productSelector).value,
+    quantity,
+    unitPrice: Number($(priceSelector).value) || 0
+  };
+}
+
+function mergeDraftItem(items, item) {
+  const existing = items.find((row) => row.productId === item.productId && row.unitPrice === item.unitPrice);
+  if (existing) {
+    existing.quantity += item.quantity;
+  } else {
+    items.push({ ...item, draftId: uid("draft") });
+  }
+}
+
+function draftItemsForSubmit(items, currentItem) {
+  const result = items.map((item) => ({ productId: item.productId, quantity: Number(item.quantity) || 0, unitPrice: Number(item.unitPrice) || 0 }));
+  if (currentItem) mergeDraftItem(result, currentItem);
+  return result
+    .filter((item) => item.productId && item.quantity > 0)
+    .map((item) => ({ productId: item.productId, quantity: item.quantity, unitPrice: item.unitPrice }));
+}
+
+function renderDraftItems() {
+  const renderRows = (items, removeAttr) => items.map((item) => `
+    <article class="draft-item">
+      <div>
+        <strong>${escapeHtml(productName(item.productId))}</strong>
+        <span>${units(item.quantity)} · ${money(item.unitPrice)} c/u</span>
+      </div>
+      <div>
+        <strong>${money((Number(item.quantity) || 0) * (Number(item.unitPrice) || 0))}</strong>
+        <button class="action-button delete" type="button" ${removeAttr}="${item.draftId}" title="Quitar">×</button>
+      </div>
+    </article>
+  `).join("");
+
+  $("#saleItemsList").innerHTML = saleDraftItems.length ? renderRows(saleDraftItems, "data-remove-sale-draft") : "";
+  $("#reservationItemsList").innerHTML = reservationDraftItems.length ? renderRows(reservationDraftItems, "data-remove-reservation-draft") : "";
+  $("#saleItemsList").querySelectorAll("[data-remove-sale-draft]").forEach((button) => {
+    button.addEventListener("click", () => {
+      saleDraftItems = saleDraftItems.filter((item) => item.draftId !== button.dataset.removeSaleDraft);
+      renderDraftItems();
+      updateSalePreview();
+    });
+  });
+  $("#reservationItemsList").querySelectorAll("[data-remove-reservation-draft]").forEach((button) => {
+    button.addEventListener("click", () => {
+      reservationDraftItems = reservationDraftItems.filter((item) => item.draftId !== button.dataset.removeReservationDraft);
+      renderDraftItems();
+      updateReservationPreview();
+    });
+  });
+}
+
+function addCurrentSaleItemToDraft() {
+  const item = readFormItem("#saleProduct", "#saleQty", "#salePrice");
+  if (!item) {
+    toast("Agrega cantidad para sumar otro producto");
+    return;
+  }
+  mergeDraftItem(saleDraftItems, item);
+  $("#saleQty").value = "";
+  renderDraftItems();
+  updateSalePreview();
+}
+
+function addCurrentReservationItemToDraft() {
+  const item = readFormItem("#reservationProduct", "#reservationQty", "#reservationPrice");
+  if (!item) {
+    toast("Agrega cantidad para sumar otro producto");
+    return;
+  }
+  mergeDraftItem(reservationDraftItems, item);
+  $("#reservationQty").value = "";
+  renderDraftItems();
+  updateReservationPreview();
+}
+
 function updateSalePreview() {
-  const qty = Number($("#saleQty").value) || 0;
-  const price = Number($("#salePrice").value) || 0;
-  $("#salePreview").textContent = money(qty * price);
+  const current = readFormItem("#saleProduct", "#saleQty", "#salePrice");
+  $("#salePreview").textContent = money(itemsTotal(draftItemsForSubmit(saleDraftItems, current)));
 }
 
 function updateReservationPreview() {
-  const qty = Number($("#reservationQty").value) || 0;
-  const price = Number($("#reservationPrice").value) || 0;
-  $("#reservationPreview").textContent = money(qty * price);
+  const current = readFormItem("#reservationProduct", "#reservationQty", "#reservationPrice");
+  $("#reservationPreview").textContent = money(itemsTotal(draftItemsForSubmit(reservationDraftItems, current)));
 }
 
 function updatePurchasePreview() {
@@ -417,7 +577,7 @@ function renderSummary() {
   tomorrow.setDate(tomorrow.getDate() + 1);
   const todaySales = state.sales.filter((sale) => isInRange(sale.createdAt, todayStart, tomorrow));
   const todayTotal = todaySales.reduce((sum, sale) => sum + saleTotal(sale), 0);
-  const todayUnits = todaySales.reduce((sum, sale) => sum + (Number(sale.quantity) || 0), 0);
+  const todayUnits = todaySales.reduce((sum, sale) => sum + itemsQuantity(saleItems(sale)), 0);
   const receivable = state.sales.filter((sale) => sale.paymentStatus === "pendiente").reduce((sum, sale) => sum + saleTotal(sale), 0);
   const stock = totalStock();
   $("#topTodaySales").textContent = money(todayTotal);
@@ -429,7 +589,7 @@ function renderSummary() {
 function saleMeta(sale) {
   const status = sale.paymentStatus === "pendiente" ? "pendiente" : sale.paymentStatus;
   const note = sale.note ? ` · ${sale.note}` : "";
-  return `${dateTime(sale.createdAt)} · ${productName(sale.productId)} · ${units(sale.quantity)} · ${status}${note}`;
+  return `${dateTime(sale.createdAt)} · ${itemsSummary(saleItems(sale))} · ${status}${note}`;
 }
 
 function purchaseMeta(purchase) {
@@ -443,7 +603,14 @@ function reservationMeta(reservation) {
   const status = reservation.status === "entregado" ? "entregada" : "pendiente";
   const note = reservation.note ? ` · ${reservation.note}` : "";
   const phone = state.customers.find((customer) => customer.id === reservation.customerId)?.phone;
-  return `${shortDate(reservation.createdAt)} · ${productName(reservation.productId)} · ${units(reservation.quantity)} · ${customerName(reservation.customerId)}${phone ? ` · ${phone}` : ""} · ${status}${note}`;
+  return `${shortDate(reservation.createdAt)} · ${itemsSummary(reservationItems(reservation))} · ${customerName(reservation.customerId)}${phone ? ` · ${phone}` : ""} · ${status}${note}`;
+}
+
+function reservationWhatsappAction(reservation) {
+  const customer = state.customers.find((row) => row.id === reservation.customerId);
+  const url = whatsappUrl(customer?.phone);
+  if (!url) return "";
+  return `<a class="action-button whatsapp-button" href="${url}" target="_blank" rel="noopener" title="Abrir WhatsApp" aria-label="Abrir WhatsApp">${whatsappIcon()}</a>`;
 }
 
 function renderRecent() {
@@ -505,6 +672,7 @@ function renderReservations() {
         </div>
         <div class="item-actions wide-actions">
           <button class="secondary deliver-button" type="button" data-deliver-reservation="${reservation.id}">Entregado</button>
+          ${reservationWhatsappAction(reservation)}
           <button class="action-button" data-edit-reservation="${reservation.id}" title="Modificar">✎</button>
           <button class="action-button delete" data-delete-reservation="${reservation.id}" title="Eliminar">×</button>
         </div>
@@ -518,6 +686,7 @@ function renderReservations() {
         </div>
         <div class="item-actions">
           <span class="status-pill done">Entregada</span>
+          ${reservationWhatsappAction(reservation)}
           <button class="action-button" data-edit-reservation="${reservation.id}" title="Modificar">✎</button>
           <button class="action-button delete" data-delete-reservation="${reservation.id}" title="Eliminar">×</button>
         </div>
@@ -568,7 +737,7 @@ function renderDashboard() {
   const purchases = state.purchases.filter((purchase) => isInRange(purchase.createdAt, start, end));
   const salesTotal = sales.reduce((sum, sale) => sum + saleTotal(sale), 0);
   const purchasesTotal = purchases.reduce((sum, purchase) => sum + purchaseTotal(purchase), 0);
-  const sold = sales.reduce((sum, sale) => sum + (Number(sale.quantity) || 0), 0);
+  const sold = sales.reduce((sum, sale) => sum + itemsQuantity(saleItems(sale)), 0);
   const bought = purchases.reduce((sum, purchase) => sum + (Number(purchase.quantity) || 0), 0);
   const cash = sales.filter((sale) => sale.paymentStatus === "efectivo").reduce((sum, sale) => sum + saleTotal(sale), 0);
   const card = sales.filter((sale) => sale.paymentStatus === "tarjeta").reduce((sum, sale) => sum + saleTotal(sale), 0);
@@ -580,7 +749,7 @@ function renderDashboard() {
   const lowStock = stockRows.filter((row) => row.stock <= 10);
   const avgCostByProduct = new Map(stockRows.map((row) => [row.product.id, row.avgCost || 0]));
   const estimatedCostOfSold = sales.reduce((sum, sale) => {
-    return sum + ((Number(sale.quantity) || 0) * (avgCostByProduct.get(sale.productId) || 0));
+    return sum + saleItems(sale).reduce((itemSum, item) => itemSum + ((Number(item.quantity) || 0) * (avgCostByProduct.get(item.productId) || 0)), 0);
   }, 0);
   const grossProfit = salesTotal - estimatedCostOfSold;
   const margin = salesTotal > 0 ? (grossProfit / salesTotal) * 100 : 0;
@@ -632,7 +801,7 @@ function renderDailyPaymentSummary() {
   for (const sale of sales) {
     const key = groups[sale.paymentStatus] ? sale.paymentStatus : "efectivo";
     groups[key].amount += saleTotal(sale);
-    groups[key].units += Number(sale.quantity) || 0;
+    groups[key].units += itemsQuantity(saleItems(sale));
   }
   $("#todayCash").textContent = money(groups.efectivo.amount);
   $("#todayCashUnits").textContent = `${units(groups.efectivo.units)} vendidas`;
@@ -670,12 +839,15 @@ function renderMonthlyTrend(selectedKey) {
 function renderTopProducts(sales, avgCostByProduct) {
   const byProduct = new Map();
   for (const sale of sales) {
-    const row = byProduct.get(sale.productId) || { productId: sale.productId, quantity: 0, revenue: 0, profit: 0 };
-    const qty = Number(sale.quantity) || 0;
-    row.quantity += qty;
-    row.revenue += saleTotal(sale);
-    row.profit += saleTotal(sale) - (qty * (avgCostByProduct.get(sale.productId) || 0));
-    byProduct.set(sale.productId, row);
+    for (const item of saleItems(sale)) {
+      const row = byProduct.get(item.productId) || { productId: item.productId, quantity: 0, revenue: 0, profit: 0 };
+      const qty = Number(item.quantity) || 0;
+      const revenue = qty * (Number(item.unitPrice) || 0);
+      row.quantity += qty;
+      row.revenue += revenue;
+      row.profit += revenue - (qty * (avgCostByProduct.get(item.productId) || 0));
+      byProduct.set(item.productId, row);
+    }
   }
   const rows = Array.from(byProduct.values())
     .sort((a, b) => b.revenue - a.revenue)
@@ -803,7 +975,7 @@ function renderHistory() {
       <article class="list-item">
         <div class="list-main">
           <span class="list-title">${sale.note || "Cliente sin nombre"}</span>
-          <span class="item-meta">${money(saleTotal(sale))} · ${dateTime(sale.createdAt)} · ${productName(sale.productId)}</span>
+          <span class="item-meta">${money(saleTotal(sale))} · ${dateTime(sale.createdAt)} · ${itemsSummary(saleItems(sale))}</span>
         </div>
         ${historyActions("sales", sale.id)}
       </article>
@@ -838,6 +1010,7 @@ function renderAll() {
   renderInventory();
   renderDashboard();
   renderHistory();
+  renderDraftItems();
   updateSalePreview();
   updateReservationPreview();
   updatePurchasePreview();
@@ -879,11 +1052,19 @@ async function addSupplier(name) {
 async function addCustomer(firstName, lastName, phone) {
   const cleanFirstName = firstName.trim();
   const cleanLastName = lastName.trim();
-  const cleanPhone = phone.trim();
+  const cleanPhone = formatChileMobilePhone(phone);
   if (!cleanFirstName || !cleanLastName) return null;
   const fullName = `${cleanFirstName} ${cleanLastName}`.toLowerCase();
   const existing = activeCustomers().find((customer) => `${customer.firstName || ""} ${customer.lastName || ""}`.trim().toLowerCase() === fullName);
-  if (existing) return existing;
+  if (existing) {
+    if (cleanPhone && existing.phone !== cleanPhone) {
+      const updated = { ...existing, phone: cleanPhone, updatedAt: new Date().toISOString() };
+      await put("customers", updated);
+      await loadState();
+      return updated;
+    }
+    return existing;
+  }
   const customer = {
     id: uid("customer"),
     firstName: cleanFirstName,
@@ -905,6 +1086,39 @@ function editSelect(label, id, rows, value, getLabel) {
   return `<label>${label}<select id="${id}">${rows.map((row) => `<option value="${row.id}" ${row.id === value ? "selected" : ""}>${getLabel(row)}</option>`).join("")}</select></label>`;
 }
 
+function editItemsFields(items) {
+  return `
+    <div class="edit-item-list">
+      <span class="item-meta">Productos del registro</span>
+      ${items.map((item, index) => `
+        <div class="edit-item-row" data-edit-item>
+          <label>Producto
+            <select data-edit-item-product>
+              ${activeProducts().map((product) => `<option value="${product.id}" ${product.id === item.productId ? "selected" : ""}>${product.name}</option>`).join("")}
+            </select>
+          </label>
+          <label>Cantidad
+            <input data-edit-item-quantity type="number" min="1" step="1" value="${Number(item.quantity) || 1}" required>
+          </label>
+          <label>Precio unitario
+            <input data-edit-item-price type="number" min="0" step="1" value="${Number(item.unitPrice) || 0}" required>
+          </label>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+function collectEditItems() {
+  return $$("#editFields [data-edit-item]")
+    .map((row) => ({
+      productId: row.querySelector("[data-edit-item-product]").value,
+      quantity: Number(row.querySelector("[data-edit-item-quantity]").value) || 0,
+      unitPrice: Number(row.querySelector("[data-edit-item-price]").value) || 0
+    }))
+    .filter((item) => item.productId && item.quantity > 0);
+}
+
 function openEdit(type, id) {
   pendingEdit = { type, id };
   const fields = $("#editFields");
@@ -913,10 +1127,8 @@ function openEdit(type, id) {
     const sale = state.sales.find((row) => row.id === id);
     title.textContent = "Modificar venta";
     fields.innerHTML = [
-      editSelect("Producto", "editProductId", activeProducts(), sale.productId, (row) => row.name),
       editField("Fecha", "editDate", "date", todayInputValueFromIso(sale.createdAt), "required"),
-      editField("Cantidad", "editQuantity", "number", sale.quantity, "min='1' step='1' required"),
-      editField("Precio unitario", "editUnitPrice", "number", sale.unitPrice, "min='0' step='1' required"),
+      editItemsFields(saleItems(sale)),
       `<label>Estado pago<select id="editPaymentStatus">
         <option value="efectivo" ${sale.paymentStatus === "efectivo" ? "selected" : ""}>Efectivo</option>
         <option value="tarjeta" ${sale.paymentStatus === "tarjeta" ? "selected" : ""}>Tarjeta</option>
@@ -957,11 +1169,9 @@ function openEdit(type, id) {
     const reservation = state.reservations.find((row) => row.id === id);
     title.textContent = "Modificar reserva";
     fields.innerHTML = [
-      editSelect("Producto", "editProductId", activeProducts(), reservation.productId, (row) => row.name),
       editSelect("Cliente", "editCustomerId", activeCustomers(), reservation.customerId, (row) => customerName(row.id)),
       editField("Fecha reserva", "editDate", "date", todayInputValueFromIso(reservation.createdAt), "required"),
-      editField("Cantidad", "editQuantity", "number", reservation.quantity, "min='1' step='1' required"),
-      editField("Precio al entregar", "editUnitPrice", "number", reservation.unitPrice, "min='0' step='1' required"),
+      editItemsFields(reservationItems(reservation)),
       `<label>Pago al entregar<select id="editPaymentStatus">
         <option value="efectivo" ${reservation.paymentStatus === "efectivo" ? "selected" : ""}>Efectivo</option>
         <option value="tarjeta" ${reservation.paymentStatus === "tarjeta" ? "selected" : ""}>Tarjeta</option>
@@ -995,12 +1205,18 @@ async function saveEdit(event) {
   if (!type || !id) return;
   if (type === "sales") {
     const sale = state.sales.find((row) => row.id === id);
+    const items = collectEditItems();
+    if (!items.length) {
+      toast("Agrega al menos un producto");
+      return;
+    }
     await put("sales", {
       ...sale,
-      productId: $("#editProductId").value,
+      items,
+      productId: primaryProductId(items),
       createdAt: dateKeepingTime(sale.createdAt, $("#editDate").value),
-      quantity: Number($("#editQuantity").value),
-      unitPrice: Number($("#editUnitPrice").value),
+      quantity: itemsQuantity(items),
+      unitPrice: averageUnitPrice(items),
       paymentStatus: $("#editPaymentStatus").value,
       note: $("#editNote").value.trim(),
       updatedAt: new Date().toISOString()
@@ -1035,13 +1251,19 @@ async function saveEdit(event) {
   }
   if (type === "reservations") {
     const reservation = state.reservations.find((row) => row.id === id);
+    const items = collectEditItems();
+    if (!items.length) {
+      toast("Agrega al menos un producto");
+      return;
+    }
     await put("reservations", {
       ...reservation,
-      productId: $("#editProductId").value,
+      items,
+      productId: primaryProductId(items),
       customerId: $("#editCustomerId").value,
       createdAt: dateKeepingTime(reservation.createdAt, $("#editDate").value),
-      quantity: Number($("#editQuantity").value),
-      unitPrice: Number($("#editUnitPrice").value),
+      quantity: itemsQuantity(items),
+      unitPrice: averageUnitPrice(items),
       paymentStatus: $("#editPaymentStatus").value,
       note: $("#editNote").value.trim(),
       updatedAt: new Date().toISOString()
@@ -1202,6 +1424,7 @@ function bindEvents() {
   $("#dashboardMonth").addEventListener("change", renderDashboard);
   $("#dailyPaymentDate").addEventListener("change", renderDailyPaymentSummary);
   $("#saleQty").addEventListener("input", updateSalePreview);
+  $("#saleProduct").addEventListener("change", updateSalePreview);
   $("#salePrice").addEventListener("input", () => {
     const rawPrice = $("#salePrice").value;
     const price = Number(rawPrice);
@@ -1211,6 +1434,7 @@ function bindEvents() {
     renderPriceButtons();
   });
   $("#reservationQty").addEventListener("input", updateReservationPreview);
+  $("#reservationProduct").addEventListener("change", updateReservationPreview);
   $("#reservationPrice").addEventListener("input", () => {
     const rawPrice = $("#reservationPrice").value;
     const price = Number(rawPrice);
@@ -1218,6 +1442,11 @@ function bindEvents() {
     saveSettings();
     updateReservationPreview();
     renderPriceButtons();
+  });
+  $("#addSaleItemBtn").addEventListener("click", addCurrentSaleItemToDraft);
+  $("#addReservationItemBtn").addEventListener("click", addCurrentReservationItemToDraft);
+  $("#newCustomerPhone").addEventListener("input", () => {
+    $("#newCustomerPhone").value = chileMobileLocalDigits($("#newCustomerPhone").value);
   });
   $("#purchaseQty").addEventListener("input", updatePurchasePreview);
   $("#purchaseCost").addEventListener("input", updatePurchasePreview);
@@ -1284,21 +1513,29 @@ function bindEvents() {
 
 async function saveSale(event) {
   event.preventDefault();
+  const items = draftItemsForSubmit(saleDraftItems, readFormItem("#saleProduct", "#saleQty", "#salePrice"));
+  if (!items.length) {
+    toast("Agrega al menos un producto a la venta");
+    return;
+  }
   const sale = {
     id: uid("sale"),
-    productId: $("#saleProduct").value,
+    productId: primaryProductId(items),
     createdAt: inputDateToIso($("#saleDate").value),
-    quantity: Number($("#saleQty").value),
-    unitPrice: Number($("#salePrice").value),
+    quantity: itemsQuantity(items),
+    unitPrice: averageUnitPrice(items),
+    items,
     paymentStatus: activeRadioValue("salePaymentStatus"),
     note: $("#saleNote").value.trim()
   };
   await put("sales", sale);
-  state.settings.lastSalePrice = sale.unitPrice;
-  if (!state.settings.salePricePresets.includes(sale.unitPrice)) {
-    state.settings.salePricePresets.push(sale.unitPrice);
+  const lastPrice = items[items.length - 1]?.unitPrice ?? sale.unitPrice;
+  state.settings.lastSalePrice = lastPrice;
+  if (!state.settings.salePricePresets.includes(lastPrice)) {
+    state.settings.salePricePresets.push(lastPrice);
   }
   await saveSettings();
+  saleDraftItems = [];
   $("#saleQty").value = "";
   $("#saleNote").value = "";
   await loadState();
@@ -1312,23 +1549,31 @@ async function saveReservation(event) {
     toast("Crea o selecciona un cliente");
     return;
   }
+  const items = draftItemsForSubmit(reservationDraftItems, readFormItem("#reservationProduct", "#reservationQty", "#reservationPrice"));
+  if (!items.length) {
+    toast("Agrega al menos un producto a la reserva");
+    return;
+  }
   const reservation = {
     id: uid("reservation"),
-    productId: $("#reservationProduct").value,
+    productId: primaryProductId(items),
     customerId: $("#reservationCustomer").value,
     createdAt: inputDateToIso($("#reservationDate").value),
-    quantity: Number($("#reservationQty").value),
-    unitPrice: Number($("#reservationPrice").value),
+    quantity: itemsQuantity(items),
+    unitPrice: averageUnitPrice(items),
+    items,
     paymentStatus: activeRadioValue("reservationPaymentStatus"),
     status: "pendiente",
     note: $("#reservationNote").value.trim()
   };
   await put("reservations", reservation);
-  state.settings.lastSalePrice = reservation.unitPrice;
-  if (!state.settings.salePricePresets.includes(reservation.unitPrice)) {
-    state.settings.salePricePresets.push(reservation.unitPrice);
+  const lastPrice = items[items.length - 1]?.unitPrice ?? reservation.unitPrice;
+  state.settings.lastSalePrice = lastPrice;
+  if (!state.settings.salePricePresets.includes(lastPrice)) {
+    state.settings.salePricePresets.push(lastPrice);
   }
   await saveSettings();
+  reservationDraftItems = [];
   $("#reservationQty").value = "";
   $("#reservationNote").value = "";
   await loadState();
@@ -1339,22 +1584,30 @@ async function saveReservation(event) {
 async function deliverReservation(id) {
   const reservation = state.reservations.find((row) => row.id === id);
   if (!reservation || reservation.status === "entregado") return;
-  const stockRow = stockByProduct().find((row) => row.product.id === reservation.productId);
-  const available = stockRow?.stock || 0;
-  const qty = Number(reservation.quantity) || 0;
-  if (available < qty) {
-    toast(`Stock insuficiente: quedan ${units(available)}`);
+  const items = reservationItems(reservation);
+  if (!items.length) {
+    toast("La reserva no tiene productos");
     return;
+  }
+  const stockRows = stockByProduct();
+  for (const item of items) {
+    const stockRow = stockRows.find((row) => row.product.id === item.productId);
+    const available = stockRow?.stock || 0;
+    if (available < item.quantity) {
+      toast(`Stock insuficiente en ${productName(item.productId)}: quedan ${units(available)}`);
+      return;
+    }
   }
   const now = new Date().toISOString();
   const customer = state.customers.find((row) => row.id === reservation.customerId);
   const customerLabel = `${customerName(reservation.customerId)}${customer?.phone ? ` · ${customer.phone}` : ""}`;
   const sale = {
     id: uid("sale"),
-    productId: reservation.productId,
+    productId: primaryProductId(items),
     createdAt: now,
-    quantity: qty,
-    unitPrice: Number(reservation.unitPrice) || 0,
+    quantity: itemsQuantity(items),
+    unitPrice: averageUnitPrice(items),
+    items,
     paymentStatus: reservation.paymentStatus || "efectivo",
     note: `Reserva entregada · ${customerLabel}${reservation.note ? ` · ${reservation.note}` : ""}`,
     reservationId: reservation.id

@@ -9,10 +9,10 @@
   <meta name="apple-mobile-web-app-title" content="Láminas POS">
   <meta name="description" content="Punto de venta local para láminas del mundial, inventario, compras, pagos y respaldo.">
   <title>Láminas Mundial POS</title>
-  <link rel="manifest" href="manifest.webmanifest?v=20260528-1">
-  <link rel="icon" href="icon.svg?v=20260528-1" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=20260528-1">
-  <link rel="stylesheet" href="styles.css?v=20260528-1">
+  <link rel="manifest" href="manifest.webmanifest?v=20260528-2">
+  <link rel="icon" href="icon.svg?v=20260528-2" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=20260528-2">
+  <link rel="stylesheet" href="styles.css?v=20260528-2">
 </head>
 <body>
   <main class="app">
@@ -55,7 +55,7 @@
           <input id="saleDate" type="date" required>
         </label>
         <label>Cantidad vendida
-          <input id="saleQty" type="number" min="1" step="1" inputmode="numeric" placeholder="Ej: 10" required>
+          <input id="saleQty" type="number" min="1" step="1" inputmode="numeric" placeholder="Ej: 10">
         </label>
         <label>Precio por lámina / unidad
           <input id="salePrice" type="number" min="0" step="1" inputmode="numeric" required>
@@ -67,6 +67,8 @@
             <button class="secondary" type="button" id="addSalePricePresetBtn">Agregar</button>
           </div>
         </div>
+        <button class="secondary full-button" type="button" id="addSaleItemBtn">Agregar otro producto</button>
+        <div class="draft-list" id="saleItemsList"></div>
         <fieldset class="segmented">
           <legend>Estado de pago</legend>
           <label><input type="radio" name="salePaymentStatus" value="efectivo" checked><span>Efectivo</span></label>
@@ -105,11 +107,13 @@
           <input id="reservationDate" type="date" required>
         </label>
         <label>Cantidad reservada
-          <input id="reservationQty" type="number" min="1" step="1" inputmode="numeric" placeholder="Ej: 20" required>
+          <input id="reservationQty" type="number" min="1" step="1" inputmode="numeric" placeholder="Ej: 20">
         </label>
         <label>Precio al entregar
           <input id="reservationPrice" type="number" min="0" step="1" inputmode="numeric" required>
         </label>
+        <button class="secondary full-button" type="button" id="addReservationItemBtn">Agregar otro producto</button>
+        <div class="draft-list" id="reservationItemsList"></div>
         <fieldset class="segmented">
           <legend>Pago al entregar</legend>
           <label><input type="radio" name="reservationPaymentStatus" value="efectivo" checked><span>Efectivo</span></label>
@@ -123,7 +127,10 @@
           <div class="customer-row">
             <input id="newCustomerFirstName" placeholder="Nombre">
             <input id="newCustomerLastName" placeholder="Apellido">
-            <input id="newCustomerPhone" placeholder="Teléfono">
+            <div class="phone-field">
+              <span>+56 9</span>
+              <input id="newCustomerPhone" type="tel" inputmode="numeric" maxlength="8" placeholder="12345678">
+            </div>
             <button class="secondary" type="button" id="addCustomerBtn">Agregar</button>
           </div>
         </label>
@@ -415,6 +422,6 @@
   </dialog>
 
   <div class="toast" id="toast"></div>
-  <script src="app.js?v=20260528-1"></script>
+  <script src="app.js?v=20260528-2"></script>
 </body>
 </html>

@@ -798,25 +798,25 @@ textarea {
   gap: 10px;
 }
 
-.customer-reservation-card {
-  width: 100%;
-  color: var(--ink);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.customer-reservation-card.active {
-  border-color: var(--brand);
-  background: #fff8dc;
-  box-shadow: 0 0 0 3px rgba(222, 21, 36, .12);
-}
-
-.customer-editor {
+.whatsapp-broadcast-card {
   display: grid;
   gap: 10px;
-  border-top: 1px solid var(--line);
-  padding-top: 10px;
+}
+
+.whatsapp-broadcast-card textarea {
+  min-height: 92px;
+}
+
+.broadcast-item {
+  align-items: flex-start;
+}
+
+.broadcast-preview {
+  color: var(--ink);
+  font-size: .86rem;
+  font-weight: 800;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .hidden {

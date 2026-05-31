@@ -9,10 +9,10 @@
   <meta name="apple-mobile-web-app-title" content="Láminas POS">
   <meta name="description" content="Punto de venta local para láminas del mundial, inventario, compras, pagos y respaldo.">
   <title>Láminas Mundial POS</title>
-  <link rel="manifest" href="manifest.webmanifest?v=20260531-5">
-  <link rel="icon" href="icon.svg?v=20260531-5" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=20260531-5">
-  <link rel="stylesheet" href="styles.css?v=20260531-5">
+  <link rel="manifest" href="manifest.webmanifest?v=20260531-6">
+  <link rel="icon" href="icon.svg?v=20260531-6" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=20260531-6">
+  <link rel="stylesheet" href="styles.css?v=20260531-6">
 </head>
 <body>
   <main class="app">
@@ -96,31 +96,27 @@
     </section>
 
     <section class="view" id="reservationsView">
+      <section class="card whatsapp-broadcast-card">
+        <div class="card-head">
+          <h2>Avisar por WhatsApp</h2>
+          <span id="reservationBroadcastCount">0 clientes</span>
+        </div>
+        <label>Mensaje
+          <textarea id="reservationBroadcastMessage">Hola, {nombre}. Los sobres están disponibles para retiro. No olvides acercarte a nuestro local.</textarea>
+        </label>
+        <button class="primary full-button" type="button" id="prepareReservationWhatsappBtn">Preparar mensajes</button>
+        <div class="list" id="reservationBroadcastList"></div>
+      </section>
+
       <section class="card customer-search-card">
         <div class="card-head">
           <h2>Clientes con reserva</h2>
-          <span id="reservedCustomerCount">0 clientes</span>
+          <span id="reservedCustomerCount">Buscar</span>
         </div>
         <label>Buscar cliente
           <input id="reservationCustomerSearch" placeholder="Nombre, apellido o teléfono">
         </label>
         <div class="list" id="reservationCustomerMatches"></div>
-        <form class="customer-editor hidden" id="reservationCustomerEditForm">
-          <div class="mini-head">
-            <span>Modificar cliente</span>
-            <strong id="reservationCustomerEditTitle">Sin cliente</strong>
-          </div>
-          <div class="customer-row">
-            <input id="editReservationCustomerFirstName" placeholder="Nombre" required>
-            <input id="editReservationCustomerLastName" placeholder="Apellido" required>
-            <div class="phone-field">
-              <span>+56 9</span>
-              <input id="editReservationCustomerPhone" type="tel" inputmode="numeric" maxlength="8" placeholder="12345678">
-            </div>
-            <button class="primary" type="submit">Guardar</button>
-          </div>
-          <button class="secondary full-button" type="button" id="useReservationCustomerBtn">Usar en nueva reserva</button>
-        </form>
       </section>
 
       <form class="card form" id="reservationForm">
@@ -469,6 +465,6 @@
   </dialog>
 
   <div class="toast" id="toast"></div>
-  <script src="app.js?v=20260531-5"></script>
+  <script src="app.js?v=20260531-6"></script>
 </body>
 </html>

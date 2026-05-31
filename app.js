@@ -1,6 +1,6 @@
 const DB_NAME = "laminas-mundial-pos-db";
 const DB_VERSION = 2;
-const APP_VERSION = "20260531-5";
+const APP_VERSION = "20260531-6";
 const STORE_NAMES = ["products", "suppliers", "sales", "purchases", "payments", "customers", "reservations", "settings"];
 const DEFAULT_PRODUCT_ID = "product-laminas-mundial";
 const DEFAULT_SUPPLIER_ID = "supplier-general";
@@ -12,7 +12,7 @@ let pendingEdit = null;
 let toastTimer;
 let saleDraftItems = [];
 let reservationDraftItems = [];
-let selectedReservationCustomerId = null;
+let whatsappBroadcastPrepared = false;
 
 const state = {
   products: [],
@@ -214,9 +214,11 @@ function formatChileMobilePhone(value) {
   return `+56 9 ${digits.slice(0, 4)}${digits.length > 4 ? ` ${digits.slice(4)}` : ""}`.trim();
 }
 
-function whatsappUrl(phone) {
+function whatsappUrl(phone, text = "") {
   const digits = chileMobileLocalDigits(phone);
-  return digits.length === 8 ? `https://wa.me/569${digits}` : "";
+  if (digits.length !== 8) return "";
+  const base = `https://wa.me/569${digits}`;
+  return text ? `${base}?text=${encodeURIComponent(text)}` : base;
 }
 
 function whatsappIcon() {
@@ -239,6 +241,16 @@ function customerName(id) {
   const customer = state.customers.find((row) => row.id === id);
   if (!customer) return "Cliente eliminado";
   return `${customer.firstName || ""} ${customer.lastName || ""}`.trim() || "Cliente sin nombre";
+}
+
+function customerFirstName(customer) {
+  return (customer?.firstName || customerName(customer?.id).split(/\s+/)[0] || "cliente").trim();
+}
+
+function paymentStatusLabel(status) {
+  if (status === "tarjeta") return "Tarjeta";
+  if (status === "pendiente") return "Pendiente de pago";
+  return "Efectivo";
 }
 
 function activeProducts() {
@@ -682,9 +694,10 @@ function purchaseMeta(purchase) {
 
 function reservationMeta(reservation) {
   const status = reservation.status === "entregado" ? "entregada" : "pendiente";
+  const payment = paymentStatusLabel(reservation.paymentStatus);
   const note = reservation.note ? ` · ${reservation.note}` : "";
   const phone = state.customers.find((customer) => customer.id === reservation.customerId)?.phone;
-  return `${shortDate(reservation.createdAt)} · ${itemsSummary(reservationItems(reservation))} · ${customerName(reservation.customerId)}${phone ? ` · ${phone}` : ""} · ${status}${note}`;
+  return `${shortDate(reservation.createdAt)} · ${itemsSummary(reservationItems(reservation))} · ${customerName(reservation.customerId)}${phone ? ` · ${phone}` : ""} · ${payment} · ${status}${note}`;
 }
 
 function reservationProductLines(reservation) {
@@ -697,15 +710,15 @@ function reservationProductLines(reservation) {
 }
 
 function reservationInfoLine(reservation) {
-  const status = reservation.status === "entregado" ? "Entregada" : "Pendiente";
+  const payment = paymentStatusLabel(reservation.paymentStatus);
   const note = reservation.note ? ` · ${reservation.note}` : "";
   const customer = state.customers.find((row) => row.id === reservation.customerId);
-  return `${shortDate(reservation.createdAt)} · ${customerName(reservation.customerId)}${customer?.phone ? ` · ${customer.phone}` : ""} · ${status}${note}`;
+  return `${shortDate(reservation.createdAt)} · ${customerName(reservation.customerId)}${customer?.phone ? ` · ${customer.phone}` : ""} · ${payment}${note}`;
 }
 
-function reservationWhatsappAction(reservation) {
+function reservationWhatsappAction(reservation, message = "") {
   const customer = state.customers.find((row) => row.id === reservation.customerId);
-  const url = whatsappUrl(customer?.phone);
+  const url = whatsappUrl(customer?.phone, message);
   if (!url) return "";
   return `<a class="action-button whatsapp-button" href="${url}" target="_blank" rel="noopener" title="Abrir WhatsApp" aria-label="Abrir WhatsApp">${whatsappIcon()}</a>`;
 }
@@ -757,136 +770,127 @@ function renderRecent() {
   );
 }
 
-function renderReservations() {
-  const pending = pendingReservations();
-  const delivered = state.reservations.filter((reservation) => reservation.status === "entregado").slice(0, 8);
-  const rows = [
-    ...pending.map((reservation) => `
-      <article class="list-item reservation-item">
-        <div class="reservation-content">
-          <div class="reservation-heading">
-            <span class="list-title">${money(reservationTotal(reservation))}</span>
-            <span class="status-pill pending">Pendiente</span>
-          </div>
-          <div class="reservation-product-lines">${reservationProductLines(reservation)}</div>
-          <span class="reservation-info">${escapeHtml(reservationInfoLine(reservation))}</span>
+function reservationCardHtml(reservation) {
+  const delivered = reservation.status === "entregado";
+  const info = `${reservationInfoLine(reservation)}${delivered && reservation.deliveredAt ? ` · venta ${dateTime(reservation.deliveredAt)}` : ""}`;
+  return `
+    <article class="list-item reservation-item ${delivered ? "delivered" : ""}">
+      <div class="reservation-content">
+        <div class="reservation-heading">
+          <span class="list-title">${money(reservationTotal(reservation))}</span>
+          <span class="status-pill ${delivered ? "done" : "pending"}">${delivered ? "Entregada" : "Pendiente"}</span>
         </div>
-        <div class="item-actions wide-actions">
-          <button class="secondary deliver-button" type="button" data-deliver-reservation="${reservation.id}">Entregado</button>
-          ${reservationWhatsappAction(reservation)}
-          <button class="action-button" data-edit-reservation="${reservation.id}" title="Modificar">✎</button>
-          <button class="action-button delete" data-delete-reservation="${reservation.id}" title="Eliminar">×</button>
-        </div>
-      </article>
-    `),
-    ...delivered.map((reservation) => `
-      <article class="list-item reservation-item delivered">
-        <div class="reservation-content">
-          <div class="reservation-heading">
-            <span class="list-title">${money(reservationTotal(reservation))}</span>
-            <span class="status-pill done">Entregada</span>
-          </div>
-          <div class="reservation-product-lines">${reservationProductLines(reservation)}</div>
-          <span class="reservation-info">${escapeHtml(`${reservationInfoLine(reservation)}${reservation.deliveredAt ? ` · venta ${dateTime(reservation.deliveredAt)}` : ""}`)}</span>
-        </div>
-        <div class="item-actions">
-          ${reservationWhatsappAction(reservation)}
-          <button class="action-button" data-edit-reservation="${reservation.id}" title="Modificar">✎</button>
-          <button class="action-button delete" data-delete-reservation="${reservation.id}" title="Eliminar">×</button>
-        </div>
-      </article>
-    `)
-  ];
-  $("#reservationPendingTotal").textContent = `${pending.length} ${pending.length === 1 ? "pendiente" : "pendientes"}`;
-  renderList($("#reservationList"), rows, "Aún no hay reservas.");
-  $("#reservationList").querySelectorAll("[data-deliver-reservation]").forEach((button) => {
+        <div class="reservation-product-lines">${reservationProductLines(reservation)}</div>
+        <span class="reservation-info">${escapeHtml(info)}</span>
+      </div>
+      <div class="item-actions ${delivered ? "" : "wide-actions"}">
+        ${delivered ? "" : `<button class="secondary deliver-button" type="button" data-deliver-reservation="${reservation.id}">Entregado</button>`}
+        ${reservationWhatsappAction(reservation)}
+        <button class="action-button" data-edit-reservation="${reservation.id}" title="Modificar">✎</button>
+        <button class="action-button delete" data-delete-reservation="${reservation.id}" title="Eliminar">×</button>
+      </div>
+    </article>
+  `;
+}
+
+function bindReservationActions(container) {
+  container.querySelectorAll("[data-deliver-reservation]").forEach((button) => {
     button.addEventListener("click", () => deliverReservation(button.dataset.deliverReservation));
   });
-  $("#reservationList").querySelectorAll("[data-edit-reservation]").forEach((button) => {
+  container.querySelectorAll("[data-edit-reservation]").forEach((button) => {
     button.addEventListener("click", () => openEdit("reservations", button.dataset.editReservation));
   });
-  $("#reservationList").querySelectorAll("[data-delete-reservation]").forEach((button) => {
+  container.querySelectorAll("[data-delete-reservation]").forEach((button) => {
     button.addEventListener("click", () => requestDelete("reservations", button.dataset.deleteReservation));
   });
 }
 
-function renderReservationCustomerSearch() {
-  const customers = customersWithPendingReservations();
-  const search = $("#reservationCustomerSearch").value || "";
-  const rows = customers
-    .map((customer) => {
-      const reservations = pendingReservations().filter((reservation) => reservation.customerId === customer.id);
-      const totalReserved = reservations.reduce((sum, reservation) => sum + itemsQuantity(reservationItems(reservation)), 0);
-      const totalValue = reservations.reduce((sum, reservation) => sum + reservationTotal(reservation), 0);
-      return { customer, reservations, totalReserved, totalValue };
-    })
-    .filter((row) => {
-      const text = `${customerName(row.customer.id)} ${row.customer.phone || ""} ${chileMobileLocalDigits(row.customer.phone)}`;
-      return matchesSearchText(text, search);
-    });
+function renderReservations() {
+  const pending = pendingReservations();
+  const delivered = state.reservations.filter((reservation) => reservation.status === "entregado").slice(0, 8);
+  $("#reservationPendingTotal").textContent = `${pending.length} ${pending.length === 1 ? "pendiente" : "pendientes"}`;
+  renderList($("#reservationList"), [...pending, ...delivered].map(reservationCardHtml), "Aún no hay reservas.");
+  bindReservationActions($("#reservationList"));
+}
 
-  if (selectedReservationCustomerId && !rows.some((row) => row.customer.id === selectedReservationCustomerId)) {
-    selectedReservationCustomerId = null;
+function renderReservationCustomerSearch() {
+  const search = $("#reservationCustomerSearch").value || "";
+  const hasSearch = Boolean(search.trim());
+  if (!hasSearch) {
+    $("#reservedCustomerCount").textContent = "Buscar";
+    $("#reservationCustomerMatches").innerHTML = "";
+    return;
   }
 
-  const hasSearch = Boolean(search.trim());
-  $("#reservedCustomerCount").textContent = hasSearch
-    ? `${rows.length} ${rows.length === 1 ? "resultado" : "resultados"}`
-    : `${customers.length} ${customers.length === 1 ? "cliente" : "clientes"}`;
-  renderList(
-    $("#reservationCustomerMatches"),
-    rows.map((row) => `
-      <button class="list-item reservation-item customer-reservation-card ${row.customer.id === selectedReservationCustomerId ? "active" : ""}" type="button" data-reservation-customer-id="${row.customer.id}">
-        <div class="reservation-content">
-          <div class="reservation-heading">
-            <span class="list-title">${escapeHtml(customerName(row.customer.id))}</span>
-            <span class="status-pill pending">${row.reservations.length} ${row.reservations.length === 1 ? "reserva" : "reservas"}</span>
-          </div>
-          <div class="reservation-product-lines">${customerReservationProductLines(row.reservations)}</div>
-          <span class="reservation-info">${escapeHtml(`${row.customer.phone || "Sin teléfono"} · Reservado ${units(row.totalReserved)} · Total ${money(row.totalValue)}`)}</span>
-        </div>
-      </button>
-    `),
-    "No hay clientes con reserva pendiente."
-  );
-
-  $("#reservationCustomerMatches").querySelectorAll("[data-reservation-customer-id]").forEach((button) => {
-    button.addEventListener("click", () => {
-      selectedReservationCustomerId = button.dataset.reservationCustomerId;
-      renderReservationCustomerSearch();
-    });
+  const rows = pendingReservations().filter((reservation) => {
+    const customer = state.customers.find((row) => row.id === reservation.customerId);
+    const text = `${customerName(reservation.customerId)} ${customer?.phone || ""} ${chileMobileLocalDigits(customer?.phone)}`;
+    return matchesSearchText(text, search);
   });
 
-  renderReservationCustomerEditor();
+  $("#reservedCustomerCount").textContent = `${rows.length} ${rows.length === 1 ? "resultado" : "resultados"}`;
+  renderList($("#reservationCustomerMatches"), rows.map(reservationCardHtml), "No encontré reservas para ese cliente.");
+  bindReservationActions($("#reservationCustomerMatches"));
 }
 
-function customerReservationProductLines(reservations) {
-  const totals = new Map();
-  for (const reservation of reservations) {
-    for (const item of reservationItems(reservation)) {
-      const current = totals.get(item.productId) || { productId: item.productId, quantity: 0, total: 0 };
-      current.quantity += Number(item.quantity) || 0;
-      current.total += (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
-      totals.set(item.productId, current);
+function reservationBroadcastRows() {
+  return customersWithPendingReservations().map((customer) => {
+    const reservations = pendingReservations().filter((reservation) => reservation.customerId === customer.id);
+    const products = new Map();
+    for (const reservation of reservations) {
+      for (const item of reservationItems(reservation)) {
+        products.set(item.productId, (products.get(item.productId) || 0) + (Number(item.quantity) || 0));
+      }
     }
-  }
-  return Array.from(totals.values()).map((item) => `
-    <span class="reservation-product-line">
-      <strong>${escapeHtml(productName(item.productId))}</strong>
-      <em>${units(item.quantity)} · ${money(item.total)}</em>
-    </span>
-  `).join("");
+    const productSummary = Array.from(products.entries())
+      .map(([productId, quantity]) => `${productName(productId)}: ${units(quantity)}`)
+      .join(" · ");
+    return {
+      customer,
+      reservations,
+      productSummary,
+      totalReserved: reservations.reduce((sum, reservation) => sum + itemsQuantity(reservationItems(reservation)), 0)
+    };
+  });
 }
 
-function renderReservationCustomerEditor() {
-  const form = $("#reservationCustomerEditForm");
-  const customer = state.customers.find((row) => row.id === selectedReservationCustomerId);
-  form.classList.toggle("hidden", !customer);
-  if (!customer) return;
-  $("#reservationCustomerEditTitle").textContent = customerName(customer.id);
-  $("#editReservationCustomerFirstName").value = customer.firstName || "";
-  $("#editReservationCustomerLastName").value = customer.lastName || "";
-  $("#editReservationCustomerPhone").value = chileMobileLocalDigits(customer.phone);
+function reservationBroadcastMessage(customer, template) {
+  return (template || "")
+    .replaceAll("{nombre}", customerFirstName(customer))
+    .replaceAll("{Nombre}", customerFirstName(customer))
+    .replaceAll("{cliente}", customerName(customer.id))
+    .replaceAll("{Cliente}", customerName(customer.id));
+}
+
+function renderReservationBroadcast() {
+  const rows = reservationBroadcastRows();
+  $("#reservationBroadcastCount").textContent = `${rows.length} ${rows.length === 1 ? "cliente" : "clientes"}`;
+  if (!whatsappBroadcastPrepared) {
+    $("#reservationBroadcastList").innerHTML = "";
+    return;
+  }
+  const template = $("#reservationBroadcastMessage").value.trim();
+  renderList(
+    $("#reservationBroadcastList"),
+    rows.map((row) => {
+      const message = reservationBroadcastMessage(row.customer, template);
+      const url = whatsappUrl(row.customer.phone, message);
+      return `
+        <article class="list-item broadcast-item">
+          <div class="list-main">
+            <span class="list-title">${escapeHtml(customerName(row.customer.id))}</span>
+            <span class="item-meta">${escapeHtml(row.customer.phone || "Sin teléfono")} · ${row.reservations.length} ${row.reservations.length === 1 ? "reserva" : "reservas"} · ${units(row.totalReserved)}</span>
+            <span class="broadcast-preview">${escapeHtml(message)}</span>
+            <span class="item-meta">${escapeHtml(row.productSummary || "Sin productos")}</span>
+          </div>
+          <div class="item-actions">
+            ${url ? `<a class="action-button whatsapp-button" href="${url}" target="_blank" rel="noopener" title="Enviar WhatsApp" aria-label="Enviar WhatsApp">${whatsappIcon()}</a>` : `<span class="status-pill pending">Sin teléfono</span>`}
+          </div>
+        </article>
+      `;
+    }),
+    "No hay clientes con reservas pendientes."
+  );
 }
 
 function renderInventory() {
@@ -1272,6 +1276,7 @@ function renderAll() {
   renderRecent();
   renderReservations();
   renderReservationCustomerSearch();
+  renderReservationBroadcast();
   renderInventory();
   renderDashboard();
   renderHistory();
@@ -1723,14 +1728,13 @@ function bindEvents() {
     $("#newCustomerPhone").value = chileMobileLocalDigits($("#newCustomerPhone").value);
   });
   $("#reservationCustomerSearch").addEventListener("input", renderReservationCustomerSearch);
-  $("#editReservationCustomerPhone").addEventListener("input", () => {
-    $("#editReservationCustomerPhone").value = chileMobileLocalDigits($("#editReservationCustomerPhone").value);
+  $("#reservationBroadcastMessage").addEventListener("input", () => {
+    if (whatsappBroadcastPrepared) renderReservationBroadcast();
   });
-  $("#reservationCustomerEditForm").addEventListener("submit", saveReservationCustomerEdit);
-  $("#useReservationCustomerBtn").addEventListener("click", () => {
-    if (!selectedReservationCustomerId) return;
-    $("#reservationCustomer").value = selectedReservationCustomerId;
-    toast("Cliente seleccionado para nueva reserva");
+  $("#prepareReservationWhatsappBtn").addEventListener("click", () => {
+    whatsappBroadcastPrepared = true;
+    renderReservationBroadcast();
+    toast("Mensajes de WhatsApp preparados");
   });
   $("#purchaseQty").addEventListener("input", updatePurchasePreview);
   $("#purchaseCost").addEventListener("input", updatePurchasePreview);
@@ -1830,29 +1834,6 @@ async function saveSale(event) {
   await loadState();
   renderAll();
   toast("Venta guardada");
-}
-
-async function saveReservationCustomerEdit(event) {
-  event.preventDefault();
-  const customer = state.customers.find((row) => row.id === selectedReservationCustomerId);
-  if (!customer) return;
-  const firstName = $("#editReservationCustomerFirstName").value.trim();
-  const lastName = $("#editReservationCustomerLastName").value.trim();
-  if (!firstName || !lastName) {
-    toast("Nombre y apellido son obligatorios");
-    return;
-  }
-  await put("customers", {
-    ...customer,
-    firstName,
-    lastName,
-    phone: formatChileMobilePhone($("#editReservationCustomerPhone").value),
-    updatedAt: new Date().toISOString()
-  });
-  await loadState();
-  renderAll();
-  $("#reservationCustomer").value = selectedReservationCustomerId;
-  toast("Cliente actualizado");
 }
 
 async function saveReservation(event) {

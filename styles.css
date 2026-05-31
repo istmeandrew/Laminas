@@ -793,6 +793,61 @@ textarea {
   font-weight: 900;
 }
 
+.customer-search-card {
+  display: grid;
+  gap: 10px;
+}
+
+.customer-match {
+  width: 100%;
+  min-height: 58px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fffefa;
+  color: var(--ink);
+  padding: 10px;
+  text-align: left;
+}
+
+.customer-match.active {
+  border-color: var(--brand);
+  background: #fff8dc;
+}
+
+.customer-match span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.customer-match small {
+  color: var(--muted);
+  font-size: .8rem;
+  font-weight: 800;
+}
+
+.customer-match em {
+  color: var(--green);
+  font-style: normal;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.customer-editor {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.hidden {
+  display: none !important;
+}
+
 .backup-card {
   display: grid;
   gap: 10px;

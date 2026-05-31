@@ -1,6 +1,6 @@
 const DB_NAME = "laminas-mundial-pos-db";
 const DB_VERSION = 2;
-const APP_VERSION = "20260531-3";
+const APP_VERSION = "20260531-4";
 const STORE_NAMES = ["products", "suppliers", "sales", "purchases", "payments", "customers", "reservations", "settings"];
 const DEFAULT_PRODUCT_ID = "product-laminas-mundial";
 const DEFAULT_SUPPLIER_ID = "supplier-general";
@@ -12,6 +12,7 @@ let pendingEdit = null;
 let toastTimer;
 let saleDraftItems = [];
 let reservationDraftItems = [];
+let selectedReservationCustomerId = null;
 
 const state = {
   products: [],
@@ -23,7 +24,8 @@ const state = {
   reservations: [],
   settings: {
     salePricePresets: [500, 700, 1000, 1500],
-    lastSalePrice: 1000
+    lastSalePrice: 1000,
+    lastReservationProductId: DEFAULT_PRODUCT_ID
   }
 };
 
@@ -362,6 +364,11 @@ function pendingReservations() {
   return state.reservations.filter((reservation) => reservation.status !== "entregado");
 }
 
+function customersWithPendingReservations() {
+  const customerIds = new Set(pendingReservations().map((reservation) => reservation.customerId).filter(Boolean));
+  return activeCustomers().filter((customer) => customerIds.has(customer.id));
+}
+
 function reservedByProduct(ignoreReservationId = null) {
   const reserved = new Map();
   for (const reservation of pendingReservations()) {
@@ -496,6 +503,9 @@ function renderSelectors() {
   const customers = activeCustomers();
   fillSelect($("#saleProduct"), products, (product) => product.name);
   fillSelect($("#reservationProduct"), products, (product) => product.name);
+  if (products.some((product) => product.id === state.settings.lastReservationProductId)) {
+    $("#reservationProduct").value = state.settings.lastReservationProductId;
+  }
   fillSelect($("#reservationCustomer"), customers, (customer) => {
     const phone = customer.phone ? ` · ${customer.phone}` : "";
     return `${customerName(customer.id)}${phone}`;
@@ -590,6 +600,8 @@ function addCurrentReservationItemToDraft() {
     return;
   }
   mergeDraftItem(reservationDraftItems, item);
+  state.settings.lastReservationProductId = item.productId;
+  saveSettings();
   $("#reservationQty").value = "";
   renderDraftItems();
   updateReservationPreview();
@@ -781,6 +793,62 @@ function renderReservations() {
   $("#reservationList").querySelectorAll("[data-delete-reservation]").forEach((button) => {
     button.addEventListener("click", () => requestDelete("reservations", button.dataset.deleteReservation));
   });
+}
+
+function renderReservationCustomerSearch() {
+  const customers = customersWithPendingReservations();
+  const search = ($("#reservationCustomerSearch").value || "").trim().toLowerCase();
+  const rows = customers
+    .map((customer) => {
+      const reservations = pendingReservations().filter((reservation) => reservation.customerId === customer.id);
+      const totalReserved = reservations.reduce((sum, reservation) => sum + itemsQuantity(reservationItems(reservation)), 0);
+      const totalValue = reservations.reduce((sum, reservation) => sum + reservationTotal(reservation), 0);
+      return { customer, reservations, totalReserved, totalValue };
+    })
+    .filter((row) => {
+      if (!search) return true;
+      const text = `${customerName(row.customer.id)} ${row.customer.phone || ""}`.toLowerCase();
+      return text.includes(search);
+    });
+
+  if (selectedReservationCustomerId && !customers.some((customer) => customer.id === selectedReservationCustomerId)) {
+    selectedReservationCustomerId = null;
+  }
+
+  $("#reservedCustomerCount").textContent = `${customers.length} ${customers.length === 1 ? "cliente" : "clientes"}`;
+  renderList(
+    $("#reservationCustomerMatches"),
+    rows.map((row) => `
+      <button class="customer-match ${row.customer.id === selectedReservationCustomerId ? "active" : ""}" type="button" data-reservation-customer-id="${row.customer.id}">
+        <span>
+          <strong>${escapeHtml(customerName(row.customer.id))}</strong>
+          <small>${escapeHtml(row.customer.phone || "Sin teléfono")}</small>
+        </span>
+        <em>${units(row.totalReserved)} · ${money(row.totalValue)}</em>
+      </button>
+    `),
+    "No hay clientes con reserva pendiente."
+  );
+
+  $("#reservationCustomerMatches").querySelectorAll("[data-reservation-customer-id]").forEach((button) => {
+    button.addEventListener("click", () => {
+      selectedReservationCustomerId = button.dataset.reservationCustomerId;
+      renderReservationCustomerSearch();
+    });
+  });
+
+  renderReservationCustomerEditor();
+}
+
+function renderReservationCustomerEditor() {
+  const form = $("#reservationCustomerEditForm");
+  const customer = state.customers.find((row) => row.id === selectedReservationCustomerId);
+  form.classList.toggle("hidden", !customer);
+  if (!customer) return;
+  $("#reservationCustomerEditTitle").textContent = customerName(customer.id);
+  $("#editReservationCustomerFirstName").value = customer.firstName || "";
+  $("#editReservationCustomerLastName").value = customer.lastName || "";
+  $("#editReservationCustomerPhone").value = chileMobileLocalDigits(customer.phone);
 }
 
 function renderInventory() {
@@ -1165,6 +1233,7 @@ function renderAll() {
   renderSummary();
   renderRecent();
   renderReservations();
+  renderReservationCustomerSearch();
   renderInventory();
   renderDashboard();
   renderHistory();
@@ -1597,7 +1666,11 @@ function bindEvents() {
     renderPriceButtons();
   });
   $("#reservationQty").addEventListener("input", updateReservationPreview);
-  $("#reservationProduct").addEventListener("change", updateReservationPreview);
+  $("#reservationProduct").addEventListener("change", () => {
+    state.settings.lastReservationProductId = $("#reservationProduct").value;
+    saveSettings();
+    updateReservationPreview();
+  });
   $("#reservationPrice").addEventListener("input", () => {
     const rawPrice = $("#reservationPrice").value;
     const price = Number(rawPrice);
@@ -1610,6 +1683,16 @@ function bindEvents() {
   $("#addReservationItemBtn").addEventListener("click", addCurrentReservationItemToDraft);
   $("#newCustomerPhone").addEventListener("input", () => {
     $("#newCustomerPhone").value = chileMobileLocalDigits($("#newCustomerPhone").value);
+  });
+  $("#reservationCustomerSearch").addEventListener("input", renderReservationCustomerSearch);
+  $("#editReservationCustomerPhone").addEventListener("input", () => {
+    $("#editReservationCustomerPhone").value = chileMobileLocalDigits($("#editReservationCustomerPhone").value);
+  });
+  $("#reservationCustomerEditForm").addEventListener("submit", saveReservationCustomerEdit);
+  $("#useReservationCustomerBtn").addEventListener("click", () => {
+    if (!selectedReservationCustomerId) return;
+    $("#reservationCustomer").value = selectedReservationCustomerId;
+    toast("Cliente seleccionado para nueva reserva");
   });
   $("#purchaseQty").addEventListener("input", updatePurchasePreview);
   $("#purchaseCost").addEventListener("input", updatePurchasePreview);
@@ -1711,6 +1794,29 @@ async function saveSale(event) {
   toast("Venta guardada");
 }
 
+async function saveReservationCustomerEdit(event) {
+  event.preventDefault();
+  const customer = state.customers.find((row) => row.id === selectedReservationCustomerId);
+  if (!customer) return;
+  const firstName = $("#editReservationCustomerFirstName").value.trim();
+  const lastName = $("#editReservationCustomerLastName").value.trim();
+  if (!firstName || !lastName) {
+    toast("Nombre y apellido son obligatorios");
+    return;
+  }
+  await put("customers", {
+    ...customer,
+    firstName,
+    lastName,
+    phone: formatChileMobilePhone($("#editReservationCustomerPhone").value),
+    updatedAt: new Date().toISOString()
+  });
+  await loadState();
+  renderAll();
+  $("#reservationCustomer").value = selectedReservationCustomerId;
+  toast("Cliente actualizado");
+}
+
 async function saveReservation(event) {
   event.preventDefault();
   if (!$("#reservationCustomer").value) {
@@ -1741,6 +1847,7 @@ async function saveReservation(event) {
   };
   await put("reservations", reservation);
   const lastPrice = items[items.length - 1]?.unitPrice ?? reservation.unitPrice;
+  state.settings.lastReservationProductId = items[items.length - 1]?.productId || reservation.productId;
   state.settings.lastSalePrice = lastPrice;
   if (!state.settings.salePricePresets.includes(lastPrice)) {
     state.settings.salePricePresets.push(lastPrice);
@@ -1751,6 +1858,10 @@ async function saveReservation(event) {
   $("#reservationNote").value = "";
   await loadState();
   renderAll();
+  if (state.settings.lastReservationProductId) {
+    $("#reservationProduct").value = state.settings.lastReservationProductId;
+  }
+  updateReservationPreview();
   toast("Reserva guardada");
 }
 

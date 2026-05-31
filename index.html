@@ -9,10 +9,10 @@
   <meta name="apple-mobile-web-app-title" content="Láminas POS">
   <meta name="description" content="Punto de venta local para láminas del mundial, inventario, compras, pagos y respaldo.">
   <title>Láminas Mundial POS</title>
-  <link rel="manifest" href="manifest.webmanifest?v=20260531-1">
-  <link rel="icon" href="icon.svg?v=20260531-1" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=20260531-1">
-  <link rel="stylesheet" href="styles.css?v=20260531-1">
+  <link rel="manifest" href="manifest.webmanifest?v=20260531-2">
+  <link rel="icon" href="icon.svg?v=20260531-2" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=20260531-2">
+  <link rel="stylesheet" href="styles.css?v=20260531-2">
 </head>
 <body>
   <main class="app">
@@ -33,8 +33,9 @@
         <small id="topTodayUnits">0 láminas</small>
       </article>
       <article>
-        <span>Stock actual</span>
+        <span>Stock disponible</span>
         <strong id="topStock">0</strong>
+        <small id="topStockBreakdown">Sin productos</small>
       </article>
       <article>
         <span>Pendiente cobro</span>
@@ -288,7 +289,7 @@
           <div><span>Compras del mes</span><strong id="monthPurchases">$0</strong></div>
           <div><span>Láminas compradas</span><strong id="monthBought">0</strong></div>
           <div><span>Ticket promedio</span><strong id="monthAverage">$0</strong></div>
-          <div><span>Stock total</span><strong id="dashboardStockTotal">0</strong></div>
+          <div><span>Stock físico</span><strong id="dashboardStockTotal">0</strong></div>
           <div><span>Reservado pendiente</span><strong id="reservedUnitsTotal">0</strong></div>
           <div><span>Stock libre estimado</span><strong id="availableAfterReservations">0</strong></div>
           <div><span>Valor reservas</span><strong id="reservedValueTotal">$0</strong></div>
@@ -441,6 +442,6 @@
   </dialog>
 
   <div class="toast" id="toast"></div>
-  <script src="app.js?v=20260531-1"></script>
+  <script src="app.js?v=20260531-2"></script>
 </body>
 </html>

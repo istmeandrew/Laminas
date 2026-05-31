@@ -1,6 +1,6 @@
 const DB_NAME = "laminas-mundial-pos-db";
 const DB_VERSION = 2;
-const APP_VERSION = "20260531-1";
+const APP_VERSION = "20260531-2";
 const STORE_NAMES = ["products", "suppliers", "sales", "purchases", "payments", "customers", "reservations", "settings"];
 const DEFAULT_PRODUCT_ID = "product-laminas-mundial";
 const DEFAULT_SUPPLIER_ID = "supplier-general";
@@ -361,6 +361,49 @@ function pendingReservations() {
   return state.reservations.filter((reservation) => reservation.status !== "entregado");
 }
 
+function reservedByProduct(ignoreReservationId = null) {
+  const reserved = new Map();
+  for (const reservation of pendingReservations()) {
+    if (reservation.id === ignoreReservationId) continue;
+    for (const item of reservationItems(reservation)) {
+      reserved.set(item.productId, (reserved.get(item.productId) || 0) + (Number(item.quantity) || 0));
+    }
+  }
+  return reserved;
+}
+
+function availableStockByProduct(ignoreReservationId = null) {
+  const reserved = reservedByProduct(ignoreReservationId);
+  return stockByProduct().map((row) => {
+    const reservedUnits = reserved.get(row.product.id) || 0;
+    return {
+      ...row,
+      reserved: reservedUnits,
+      available: row.stock - reservedUnits
+    };
+  });
+}
+
+function totalAvailableStock() {
+  return availableStockByProduct().reduce((sum, row) => sum + row.available, 0);
+}
+
+function stockAvailabilityIssue(items, ignoreReservationId = null) {
+  const neededByProduct = new Map();
+  for (const item of items) {
+    neededByProduct.set(item.productId, (neededByProduct.get(item.productId) || 0) + (Number(item.quantity) || 0));
+  }
+  const availableRows = availableStockByProduct(ignoreReservationId);
+  for (const [productId, needed] of neededByProduct) {
+    const row = availableRows.find((stockRow) => stockRow.product.id === productId);
+    const available = row?.available || 0;
+    if (needed > available) {
+      return `Stock disponible insuficiente en ${productName(productId)}: quedan ${units(available)}`;
+    }
+  }
+  return "";
+}
+
 async function loadState() {
   const [products, suppliers, sales, purchases, payments, customers, reservations, settingsRows] = await Promise.all([
     getAll("products"),
@@ -583,10 +626,16 @@ function renderSummary() {
   const todayTotal = todaySales.reduce((sum, sale) => sum + saleTotal(sale), 0);
   const todayUnits = todaySales.reduce((sum, sale) => sum + itemsQuantity(saleItems(sale)), 0);
   const receivable = state.sales.filter((sale) => sale.paymentStatus === "pendiente").reduce((sum, sale) => sum + saleTotal(sale), 0);
-  const stock = totalStock();
+  const availableRows = availableStockByProduct();
+  const stock = availableRows.reduce((sum, row) => sum + row.available, 0);
+  const breakdown = availableRows
+    .filter((row) => row.bought > 0 || row.sold > 0 || row.reserved > 0 || row.available !== 0)
+    .map((row) => `${row.product.name}: ${units(row.available)}`)
+    .join(" · ");
   $("#topTodaySales").textContent = money(todayTotal);
   $("#topTodayUnits").textContent = `${units(todayUnits)} vendidas`;
   $("#topStock").textContent = units(stock);
+  $("#topStockBreakdown").textContent = breakdown || "Sin productos disponibles";
   $("#topReceivable").textContent = money(receivable);
 }
 
@@ -608,6 +657,22 @@ function reservationMeta(reservation) {
   const note = reservation.note ? ` · ${reservation.note}` : "";
   const phone = state.customers.find((customer) => customer.id === reservation.customerId)?.phone;
   return `${shortDate(reservation.createdAt)} · ${itemsSummary(reservationItems(reservation))} · ${customerName(reservation.customerId)}${phone ? ` · ${phone}` : ""} · ${status}${note}`;
+}
+
+function reservationProductLines(reservation) {
+  return reservationItems(reservation).map((item) => `
+    <span class="reservation-product-line">
+      <strong>${escapeHtml(productName(item.productId))}</strong>
+      <em>${units(item.quantity)}</em>
+    </span>
+  `).join("");
+}
+
+function reservationInfoLine(reservation) {
+  const status = reservation.status === "entregado" ? "Entregada" : "Pendiente";
+  const note = reservation.note ? ` · ${reservation.note}` : "";
+  const customer = state.customers.find((row) => row.id === reservation.customerId);
+  return `${shortDate(reservation.createdAt)} · ${customerName(reservation.customerId)}${customer?.phone ? ` · ${customer.phone}` : ""} · ${status}${note}`;
 }
 
 function reservationWhatsappAction(reservation) {
@@ -670,9 +735,13 @@ function renderReservations() {
   const rows = [
     ...pending.map((reservation) => `
       <article class="list-item reservation-item">
-        <div class="list-main">
-          <span class="list-title">${money(reservationTotal(reservation))}</span>
-          <span class="item-meta">${reservationMeta(reservation)}</span>
+        <div class="reservation-content">
+          <div class="reservation-heading">
+            <span class="list-title">${money(reservationTotal(reservation))}</span>
+            <span class="status-pill pending">Pendiente</span>
+          </div>
+          <div class="reservation-product-lines">${reservationProductLines(reservation)}</div>
+          <span class="reservation-info">${escapeHtml(reservationInfoLine(reservation))}</span>
         </div>
         <div class="item-actions wide-actions">
           <button class="secondary deliver-button" type="button" data-deliver-reservation="${reservation.id}">Entregado</button>
@@ -684,12 +753,15 @@ function renderReservations() {
     `),
     ...delivered.map((reservation) => `
       <article class="list-item reservation-item delivered">
-        <div class="list-main">
-          <span class="list-title">${money(reservationTotal(reservation))}</span>
-          <span class="item-meta">${reservationMeta(reservation)}${reservation.deliveredAt ? ` · venta ${dateTime(reservation.deliveredAt)}` : ""}</span>
+        <div class="reservation-content">
+          <div class="reservation-heading">
+            <span class="list-title">${money(reservationTotal(reservation))}</span>
+            <span class="status-pill done">Entregada</span>
+          </div>
+          <div class="reservation-product-lines">${reservationProductLines(reservation)}</div>
+          <span class="reservation-info">${escapeHtml(`${reservationInfoLine(reservation)}${reservation.deliveredAt ? ` · venta ${dateTime(reservation.deliveredAt)}` : ""}`)}</span>
         </div>
         <div class="item-actions">
-          <span class="status-pill done">Entregada</span>
           ${reservationWhatsappAction(reservation)}
           <button class="action-button" data-edit-reservation="${reservation.id}" title="Modificar">✎</button>
           <button class="action-button delete" data-delete-reservation="${reservation.id}" title="Eliminar">×</button>
@@ -711,14 +783,14 @@ function renderReservations() {
 }
 
 function renderInventory() {
-  const rows = stockByProduct();
+  const rows = availableStockByProduct();
   const html = rows.map((row) => `
     <article class="list-item">
       <div class="list-main">
         <span class="list-title">${row.product.name}</span>
-        <span class="item-meta">Compradas ${units(row.bought)} · Vendidas ${units(row.sold)} · Costo prom. ${money(row.avgCost)}</span>
+        <span class="item-meta">Físico ${units(row.stock)} · Reservado ${units(row.reserved)} · Vendidas ${units(row.sold)} · Costo prom. ${money(row.avgCost)}</span>
       </div>
-      <strong>${units(row.stock)}</strong>
+      <strong>${units(row.available)}</strong>
     </article>
   `);
   renderList($("#inventoryList"), html, "Aún no hay inventario.");
@@ -749,12 +821,14 @@ function renderDashboard() {
   const pendingRows = sales.filter((sale) => sale.paymentStatus === "pendiente");
   const providerDebt = activeSuppliers().reduce((sum, supplier) => sum + Math.max(0, supplierDebt(supplier.id)), 0);
   const stockRows = stockByProduct();
+  const availableRows = availableStockByProduct();
   const stockTotal = stockRows.reduce((sum, row) => sum + row.stock, 0);
+  const availableTotal = availableRows.reduce((sum, row) => sum + row.available, 0);
   const reservations = pendingReservations();
   const reservedUnits = reservations.reduce((sum, reservation) => sum + itemsQuantity(reservationItems(reservation)), 0);
   const reservedValue = reservations.reduce((sum, reservation) => sum + reservationTotal(reservation), 0);
   const reservationClients = new Set(reservations.map((reservation) => reservation.customerId).filter(Boolean));
-  const lowStock = stockRows.filter((row) => row.stock <= 10);
+  const lowStock = availableRows.filter((row) => row.available <= 10);
   const avgCostByProduct = new Map(stockRows.map((row) => [row.product.id, row.avgCost || 0]));
   const estimatedCostOfSold = sales.reduce((sum, sale) => {
     return sum + saleItems(sale).reduce((itemSum, item) => itemSum + ((Number(item.quantity) || 0) * (avgCostByProduct.get(item.productId) || 0)), 0);
@@ -777,7 +851,7 @@ function renderDashboard() {
   $("#monthAverage").textContent = money(sales.length ? salesTotal / sales.length : 0);
   $("#dashboardStockTotal").textContent = units(stockTotal);
   $("#reservedUnitsTotal").textContent = units(reservedUnits);
-  $("#availableAfterReservations").textContent = units(stockTotal - reservedUnits);
+  $("#availableAfterReservations").textContent = units(availableTotal);
   $("#reservedValueTotal").textContent = money(reservedValue);
   $("#reservationClientCount").textContent = `${reservationClients.size} ${reservationClients.size === 1 ? "cliente" : "clientes"}`;
   $("#lowStockCount").textContent = `${lowStock.length} productos`;
@@ -795,7 +869,7 @@ function renderDashboard() {
   renderReservedProducts(reservations);
   renderMonthlyTrend(select.value);
   renderTopProducts(sales, avgCostByProduct);
-  renderBusinessAlerts({ pendingRows, lowStock, providerDebt, grossProfit, salesTotal, stockTotal });
+  renderBusinessAlerts({ pendingRows, lowStock, providerDebt, grossProfit, salesTotal, availableTotal });
 }
 
 function renderReservedProducts(reservations) {
@@ -950,7 +1024,7 @@ function renderTopProducts(sales, avgCostByProduct) {
   );
 }
 
-function renderBusinessAlerts({ pendingRows, lowStock, providerDebt, grossProfit, salesTotal, stockTotal }) {
+function renderBusinessAlerts({ pendingRows, lowStock, providerDebt, grossProfit, salesTotal, availableTotal }) {
   const alerts = [];
   if (pendingRows.length) {
     const total = pendingRows.reduce((sum, sale) => sum + saleTotal(sale), 0);
@@ -962,7 +1036,7 @@ function renderBusinessAlerts({ pendingRows, lowStock, providerDebt, grossProfit
   if (lowStock.length) {
     alerts.push({
       title: "Stock bajo",
-      meta: lowStock.slice(0, 4).map((row) => `${row.product.name}: ${units(row.stock)}`).join(" · ")
+      meta: lowStock.slice(0, 4).map((row) => `${row.product.name}: ${units(row.available)} disponibles`).join(" · ")
     });
   }
   if (providerDebt > 0) {
@@ -977,10 +1051,10 @@ function renderBusinessAlerts({ pendingRows, lowStock, providerDebt, grossProfit
       meta: "El costo estimado supera las ventas del mes."
     });
   }
-  if (stockTotal <= 10) {
+  if (availableTotal <= 10) {
     alerts.push({
       title: "Inventario muy ajustado",
-      meta: `Quedan ${units(stockTotal)} en total.`
+      meta: `Quedan ${units(availableTotal)} disponibles en total.`
     });
   }
   renderList(
@@ -1339,6 +1413,11 @@ async function saveEdit(event) {
       toast("Agrega al menos un producto");
       return;
     }
+    const stockIssue = stockAvailabilityIssue(items, id);
+    if (stockIssue) {
+      toast(stockIssue);
+      return;
+    }
     await put("reservations", {
       ...reservation,
       items,
@@ -1601,6 +1680,11 @@ async function saveSale(event) {
     toast("Agrega al menos un producto a la venta");
     return;
   }
+  const stockIssue = stockAvailabilityIssue(items);
+  if (stockIssue) {
+    toast(stockIssue);
+    return;
+  }
   const sale = {
     id: uid("sale"),
     productId: primaryProductId(items),
@@ -1635,6 +1719,11 @@ async function saveReservation(event) {
   const items = draftItemsForSubmit(reservationDraftItems, readFormItem("#reservationProduct", "#reservationQty", "#reservationPrice"));
   if (!items.length) {
     toast("Agrega al menos un producto a la reserva");
+    return;
+  }
+  const stockIssue = stockAvailabilityIssue(items);
+  if (stockIssue) {
+    toast(stockIssue);
     return;
   }
   const reservation = {

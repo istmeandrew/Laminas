@@ -1,4 +1,4 @@
-const APP_VERSION = "20260531-2";
+const APP_VERSION = "20260531-3";
 const CACHE_NAME = `laminas-mundial-pos-${APP_VERSION}`;
 const ASSETS = [
   "./",

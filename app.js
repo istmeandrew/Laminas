@@ -1,6 +1,6 @@
 const DB_NAME = "laminas-mundial-pos-db";
 const DB_VERSION = 2;
-const APP_VERSION = "20260531-2";
+const APP_VERSION = "20260531-3";
 const STORE_NAMES = ["products", "suppliers", "sales", "purchases", "payments", "customers", "reservations", "settings"];
 const DEFAULT_PRODUCT_ID = "product-laminas-mundial";
 const DEFAULT_SUPPLIER_ID = "supplier-general";
@@ -94,9 +94,10 @@ function money(value) {
   }).format(Math.round(Number(value) || 0));
 }
 
-function units(value, label = "lámina") {
+function units(value, label = "") {
   const n = Number(value) || 0;
   const text = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 }).format(n);
+  if (!label) return text;
   return `${text} ${n === 1 ? label : `${label}s`}`;
 }
 
@@ -633,7 +634,7 @@ function renderSummary() {
     .map((row) => `${row.product.name}: ${units(row.available)}`)
     .join(" · ");
   $("#topTodaySales").textContent = money(todayTotal);
-  $("#topTodayUnits").textContent = `${units(todayUnits)} vendidas`;
+  $("#topTodayUnits").textContent = `${units(todayUnits)} vendidos`;
   $("#topStock").textContent = units(stock);
   $("#topStockBreakdown").textContent = breakdown || "Sin productos disponibles";
   $("#topReceivable").textContent = money(receivable);
@@ -788,7 +789,7 @@ function renderInventory() {
     <article class="list-item">
       <div class="list-main">
         <span class="list-title">${row.product.name}</span>
-        <span class="item-meta">Físico ${units(row.stock)} · Reservado ${units(row.reserved)} · Vendidas ${units(row.sold)} · Costo prom. ${money(row.avgCost)}</span>
+        <span class="item-meta">Físico ${units(row.stock)} · Reservado ${units(row.reserved)} · Vendidos ${units(row.sold)} · Costo prom. ${money(row.avgCost)}</span>
       </div>
       <strong>${units(row.available)}</strong>
     </article>
@@ -847,7 +848,7 @@ function renderDashboard() {
   $("#monthCashFlow").textContent = money(salesTotal - purchasesTotal);
   $("#monthPurchases").textContent = money(purchasesTotal);
   $("#monthBought").textContent = units(bought);
-  $("#monthSold").textContent = `${units(sold)} vendidas`;
+  $("#monthSold").textContent = `${units(sold)} vendidos`;
   $("#monthAverage").textContent = money(sales.length ? salesTotal / sales.length : 0);
   $("#dashboardStockTotal").textContent = units(stockTotal);
   $("#reservedUnitsTotal").textContent = units(reservedUnits);
@@ -893,7 +894,7 @@ function renderReservedProducts(reservations) {
       <article class="list-item product-rank">
         <div class="list-main">
           <span class="list-title">${escapeHtml(productName(row.productId))}</span>
-          <span class="item-meta">${units(row.quantity)} reservadas · ${row.customers.size} ${row.customers.size === 1 ? "cliente" : "clientes"} · ${row.reservations} ${row.reservations === 1 ? "reserva" : "reservas"}</span>
+          <span class="item-meta">${units(row.quantity)} reservados · ${row.customers.size} ${row.customers.size === 1 ? "cliente" : "clientes"} · ${row.reservations} ${row.reservations === 1 ? "reserva" : "reservas"}</span>
         </div>
         <strong>${money(row.value)}</strong>
       </article>
@@ -936,9 +937,9 @@ function renderDailyPaymentSummary() {
     }
   }
   $("#todayCash").textContent = money(groups.efectivo.amount);
-  $("#todayCashUnits").textContent = `${units(groups.efectivo.units)} vendidas`;
+  $("#todayCashUnits").textContent = `${units(groups.efectivo.units)} vendidos`;
   $("#todayCard").textContent = money(groups.tarjeta.amount);
-  $("#todayCardUnits").textContent = `${units(groups.tarjeta.units)} vendidas`;
+  $("#todayCardUnits").textContent = `${units(groups.tarjeta.units)} vendidos`;
   $("#todayPending").textContent = money(groups.pendiente.amount);
   $("#todayPendingUnits").textContent = `${units(groups.pendiente.units)} pendientes`;
   renderDailyProductSales(Array.from(productRows.values()));
@@ -958,7 +959,7 @@ function renderDailyProductSales(rows) {
         <article class="list-item product-rank">
           <div class="list-main">
             <span class="list-title">${escapeHtml(productName(row.productId))}</span>
-            <span class="item-meta">${units(row.quantity)} vendidas${paymentParts ? ` · ${paymentParts}` : ""}</span>
+            <span class="item-meta">${units(row.quantity)} vendidos${paymentParts ? ` · ${paymentParts}` : ""}</span>
           </div>
           <strong>${money(row.amount)}</strong>
         </article>

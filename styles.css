@@ -715,6 +715,29 @@ textarea {
   line-height: 1;
 }
 
+.daily-product-panel {
+  display: grid;
+  gap: 9px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.mini-head {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.mini-head span,
+.mini-head strong {
+  color: var(--muted);
+  font-size: .82rem;
+  font-weight: 900;
+}
+
 .backup-card {
   display: grid;
   gap: 10px;

@@ -1,6 +1,6 @@
 const DB_NAME = "laminas-mundial-pos-db";
 const DB_VERSION = 2;
-const APP_VERSION = "20260528-2";
+const APP_VERSION = "20260531-1";
 const STORE_NAMES = ["products", "suppliers", "sales", "purchases", "payments", "customers", "reservations", "settings"];
 const DEFAULT_PRODUCT_ID = "product-laminas-mundial";
 const DEFAULT_SUPPLIER_ID = "supplier-general";
@@ -357,6 +357,10 @@ function totalStock() {
   return stockByProduct().reduce((sum, row) => sum + row.stock, 0);
 }
 
+function pendingReservations() {
+  return state.reservations.filter((reservation) => reservation.status !== "entregado");
+}
+
 async function loadState() {
   const [products, suppliers, sales, purchases, payments, customers, reservations, settingsRows] = await Promise.all([
     getAll("products"),
@@ -661,7 +665,7 @@ function renderRecent() {
 }
 
 function renderReservations() {
-  const pending = state.reservations.filter((reservation) => reservation.status !== "entregado");
+  const pending = pendingReservations();
   const delivered = state.reservations.filter((reservation) => reservation.status === "entregado").slice(0, 8);
   const rows = [
     ...pending.map((reservation) => `
@@ -746,6 +750,10 @@ function renderDashboard() {
   const providerDebt = activeSuppliers().reduce((sum, supplier) => sum + Math.max(0, supplierDebt(supplier.id)), 0);
   const stockRows = stockByProduct();
   const stockTotal = stockRows.reduce((sum, row) => sum + row.stock, 0);
+  const reservations = pendingReservations();
+  const reservedUnits = reservations.reduce((sum, reservation) => sum + itemsQuantity(reservationItems(reservation)), 0);
+  const reservedValue = reservations.reduce((sum, reservation) => sum + reservationTotal(reservation), 0);
+  const reservationClients = new Set(reservations.map((reservation) => reservation.customerId).filter(Boolean));
   const lowStock = stockRows.filter((row) => row.stock <= 10);
   const avgCostByProduct = new Map(stockRows.map((row) => [row.product.id, row.avgCost || 0]));
   const estimatedCostOfSold = sales.reduce((sum, sale) => {
@@ -768,6 +776,10 @@ function renderDashboard() {
   $("#monthSold").textContent = `${units(sold)} vendidas`;
   $("#monthAverage").textContent = money(sales.length ? salesTotal / sales.length : 0);
   $("#dashboardStockTotal").textContent = units(stockTotal);
+  $("#reservedUnitsTotal").textContent = units(reservedUnits);
+  $("#availableAfterReservations").textContent = units(stockTotal - reservedUnits);
+  $("#reservedValueTotal").textContent = money(reservedValue);
+  $("#reservationClientCount").textContent = `${reservationClients.size} ${reservationClients.size === 1 ? "cliente" : "clientes"}`;
   $("#lowStockCount").textContent = `${lowStock.length} productos`;
   $("#monthCash").textContent = money(cash);
   $("#monthCard").textContent = money(card);
@@ -780,9 +792,40 @@ function renderDashboard() {
   setBar("#pendingBar", pending);
 
   renderDailyPaymentSummary();
+  renderReservedProducts(reservations);
   renderMonthlyTrend(select.value);
   renderTopProducts(sales, avgCostByProduct);
   renderBusinessAlerts({ pendingRows, lowStock, providerDebt, grossProfit, salesTotal, stockTotal });
+}
+
+function renderReservedProducts(reservations) {
+  const byProduct = new Map();
+  for (const reservation of reservations) {
+    for (const item of reservationItems(reservation)) {
+      const row = byProduct.get(item.productId) || { productId: item.productId, quantity: 0, value: 0, customers: new Set(), reservations: 0 };
+      const qty = Number(item.quantity) || 0;
+      row.quantity += qty;
+      row.value += qty * (Number(item.unitPrice) || 0);
+      if (reservation.customerId) row.customers.add(reservation.customerId);
+      row.reservations += 1;
+      byProduct.set(item.productId, row);
+    }
+  }
+  const rows = Array.from(byProduct.values()).sort((a, b) => b.quantity - a.quantity);
+  $("#reservationCountLabel").textContent = `${reservations.length} ${reservations.length === 1 ? "reserva" : "reservas"}`;
+  renderList(
+    $("#reservedProductsList"),
+    rows.map((row) => `
+      <article class="list-item product-rank">
+        <div class="list-main">
+          <span class="list-title">${escapeHtml(productName(row.productId))}</span>
+          <span class="item-meta">${units(row.quantity)} reservadas · ${row.customers.size} ${row.customers.size === 1 ? "cliente" : "clientes"} · ${row.reservations} ${row.reservations === 1 ? "reserva" : "reservas"}</span>
+        </div>
+        <strong>${money(row.value)}</strong>
+      </article>
+    `),
+    "No hay productos reservados."
+  );
 }
 
 function renderDailyPaymentSummary() {
@@ -798,10 +841,25 @@ function renderDailyPaymentSummary() {
     tarjeta: { amount: 0, units: 0 },
     pendiente: { amount: 0, units: 0 }
   };
+  const productRows = new Map();
   for (const sale of sales) {
     const key = groups[sale.paymentStatus] ? sale.paymentStatus : "efectivo";
     groups[key].amount += saleTotal(sale);
     groups[key].units += itemsQuantity(saleItems(sale));
+    for (const item of saleItems(sale)) {
+      const row = productRows.get(item.productId) || {
+        productId: item.productId,
+        quantity: 0,
+        amount: 0,
+        payments: { efectivo: 0, tarjeta: 0, pendiente: 0 }
+      };
+      const qty = Number(item.quantity) || 0;
+      const amount = qty * (Number(item.unitPrice) || 0);
+      row.quantity += qty;
+      row.amount += amount;
+      row.payments[key] += amount;
+      productRows.set(item.productId, row);
+    }
   }
   $("#todayCash").textContent = money(groups.efectivo.amount);
   $("#todayCashUnits").textContent = `${units(groups.efectivo.units)} vendidas`;
@@ -809,6 +867,31 @@ function renderDailyPaymentSummary() {
   $("#todayCardUnits").textContent = `${units(groups.tarjeta.units)} vendidas`;
   $("#todayPending").textContent = money(groups.pendiente.amount);
   $("#todayPendingUnits").textContent = `${units(groups.pendiente.units)} pendientes`;
+  renderDailyProductSales(Array.from(productRows.values()));
+}
+
+function renderDailyProductSales(rows) {
+  const sorted = rows.sort((a, b) => b.amount - a.amount);
+  $("#dailyProductCount").textContent = `${sorted.length} ${sorted.length === 1 ? "producto" : "productos"}`;
+  renderList(
+    $("#dailyProductSalesList"),
+    sorted.map((row) => {
+      const paymentParts = Object.entries(row.payments)
+        .filter(([, amount]) => amount > 0)
+        .map(([name, amount]) => `${name}: ${money(amount)}`)
+        .join(" · ");
+      return `
+        <article class="list-item product-rank">
+          <div class="list-main">
+            <span class="list-title">${escapeHtml(productName(row.productId))}</span>
+            <span class="item-meta">${units(row.quantity)} vendidas${paymentParts ? ` · ${paymentParts}` : ""}</span>
+          </div>
+          <strong>${money(row.amount)}</strong>
+        </article>
+      `;
+    }),
+    "No hay ventas de productos en esta fecha."
+  );
 }
 
 function renderMonthlyTrend(selectedKey) {

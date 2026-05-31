@@ -9,10 +9,10 @@
   <meta name="apple-mobile-web-app-title" content="Láminas POS">
   <meta name="description" content="Punto de venta local para láminas del mundial, inventario, compras, pagos y respaldo.">
   <title>Láminas Mundial POS</title>
-  <link rel="manifest" href="manifest.webmanifest?v=20260528-2">
-  <link rel="icon" href="icon.svg?v=20260528-2" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=20260528-2">
-  <link rel="stylesheet" href="styles.css?v=20260528-2">
+  <link rel="manifest" href="manifest.webmanifest?v=20260531-1">
+  <link rel="icon" href="icon.svg?v=20260531-1" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=20260531-1">
+  <link rel="stylesheet" href="styles.css?v=20260531-1">
 </head>
 <body>
   <main class="app">
@@ -289,9 +289,21 @@
           <div><span>Láminas compradas</span><strong id="monthBought">0</strong></div>
           <div><span>Ticket promedio</span><strong id="monthAverage">$0</strong></div>
           <div><span>Stock total</span><strong id="dashboardStockTotal">0</strong></div>
+          <div><span>Reservado pendiente</span><strong id="reservedUnitsTotal">0</strong></div>
+          <div><span>Stock libre estimado</span><strong id="availableAfterReservations">0</strong></div>
+          <div><span>Valor reservas</span><strong id="reservedValueTotal">$0</strong></div>
+          <div><span>Clientes con reserva</span><strong id="reservationClientCount">0</strong></div>
           <div><span>Stock crítico</span><strong id="lowStockCount">0</strong></div>
           <div><span>Deuda proveedores</span><strong id="providerDebtTotal">$0</strong></div>
         </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Productos en reserva</h2>
+          <span id="reservationCountLabel">0 reservas</span>
+        </div>
+        <div class="list" id="reservedProductsList"></div>
       </section>
 
       <section class="card chart-card">
@@ -333,6 +345,13 @@
             <strong id="todayPending">$0</strong>
             <small id="todayPendingUnits">0 láminas</small>
           </article>
+        </div>
+        <div class="daily-product-panel">
+          <div class="mini-head">
+            <span>Detalle por producto</span>
+            <strong id="dailyProductCount">0 productos</strong>
+          </div>
+          <div class="list" id="dailyProductSalesList"></div>
         </div>
       </section>
 
@@ -422,6 +441,6 @@
   </dialog>
 
   <div class="toast" id="toast"></div>
-  <script src="app.js?v=20260528-2"></script>
+  <script src="app.js?v=20260531-1"></script>
 </body>
 </html>

@@ -798,43 +798,18 @@ textarea {
   gap: 10px;
 }
 
-.customer-match {
+.customer-reservation-card {
   width: 100%;
-  min-height: 58px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #fffefa;
   color: var(--ink);
-  padding: 10px;
+  font: inherit;
   text-align: left;
+  cursor: pointer;
 }
 
-.customer-match.active {
+.customer-reservation-card.active {
   border-color: var(--brand);
   background: #fff8dc;
-}
-
-.customer-match span {
-  min-width: 0;
-  display: grid;
-  gap: 3px;
-}
-
-.customer-match small {
-  color: var(--muted);
-  font-size: .8rem;
-  font-weight: 800;
-}
-
-.customer-match em {
-  color: var(--green);
-  font-style: normal;
-  font-weight: 900;
-  white-space: nowrap;
+  box-shadow: 0 0 0 3px rgba(222, 21, 36, .12);
 }
 
 .customer-editor {

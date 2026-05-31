@@ -1,6 +1,6 @@
 const DB_NAME = "laminas-mundial-pos-db";
 const DB_VERSION = 2;
-const APP_VERSION = "20260531-4";
+const APP_VERSION = "20260531-5";
 const STORE_NAMES = ["products", "suppliers", "sales", "purchases", "payments", "customers", "reservations", "settings"];
 const DEFAULT_PRODUCT_ID = "product-laminas-mundial";
 const DEFAULT_SUPPLIER_ID = "supplier-general";
@@ -183,6 +183,21 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function searchableText(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function matchesSearchText(value, search) {
+  const terms = searchableText(search).split(/\s+/).filter(Boolean);
+  if (!terms.length) return true;
+  const text = searchableText(value);
+  return terms.every((term) => text.includes(term));
 }
 
 function chileMobileLocalDigits(value) {
@@ -797,7 +812,7 @@ function renderReservations() {
 
 function renderReservationCustomerSearch() {
   const customers = customersWithPendingReservations();
-  const search = ($("#reservationCustomerSearch").value || "").trim().toLowerCase();
+  const search = $("#reservationCustomerSearch").value || "";
   const rows = customers
     .map((customer) => {
       const reservations = pendingReservations().filter((reservation) => reservation.customerId === customer.id);
@@ -806,25 +821,30 @@ function renderReservationCustomerSearch() {
       return { customer, reservations, totalReserved, totalValue };
     })
     .filter((row) => {
-      if (!search) return true;
-      const text = `${customerName(row.customer.id)} ${row.customer.phone || ""}`.toLowerCase();
-      return text.includes(search);
+      const text = `${customerName(row.customer.id)} ${row.customer.phone || ""} ${chileMobileLocalDigits(row.customer.phone)}`;
+      return matchesSearchText(text, search);
     });
 
-  if (selectedReservationCustomerId && !customers.some((customer) => customer.id === selectedReservationCustomerId)) {
+  if (selectedReservationCustomerId && !rows.some((row) => row.customer.id === selectedReservationCustomerId)) {
     selectedReservationCustomerId = null;
   }
 
-  $("#reservedCustomerCount").textContent = `${customers.length} ${customers.length === 1 ? "cliente" : "clientes"}`;
+  const hasSearch = Boolean(search.trim());
+  $("#reservedCustomerCount").textContent = hasSearch
+    ? `${rows.length} ${rows.length === 1 ? "resultado" : "resultados"}`
+    : `${customers.length} ${customers.length === 1 ? "cliente" : "clientes"}`;
   renderList(
     $("#reservationCustomerMatches"),
     rows.map((row) => `
-      <button class="customer-match ${row.customer.id === selectedReservationCustomerId ? "active" : ""}" type="button" data-reservation-customer-id="${row.customer.id}">
-        <span>
-          <strong>${escapeHtml(customerName(row.customer.id))}</strong>
-          <small>${escapeHtml(row.customer.phone || "Sin teléfono")}</small>
-        </span>
-        <em>${units(row.totalReserved)} · ${money(row.totalValue)}</em>
+      <button class="list-item reservation-item customer-reservation-card ${row.customer.id === selectedReservationCustomerId ? "active" : ""}" type="button" data-reservation-customer-id="${row.customer.id}">
+        <div class="reservation-content">
+          <div class="reservation-heading">
+            <span class="list-title">${escapeHtml(customerName(row.customer.id))}</span>
+            <span class="status-pill pending">${row.reservations.length} ${row.reservations.length === 1 ? "reserva" : "reservas"}</span>
+          </div>
+          <div class="reservation-product-lines">${customerReservationProductLines(row.reservations)}</div>
+          <span class="reservation-info">${escapeHtml(`${row.customer.phone || "Sin teléfono"} · Reservado ${units(row.totalReserved)} · Total ${money(row.totalValue)}`)}</span>
+        </div>
       </button>
     `),
     "No hay clientes con reserva pendiente."
@@ -838,6 +858,24 @@ function renderReservationCustomerSearch() {
   });
 
   renderReservationCustomerEditor();
+}
+
+function customerReservationProductLines(reservations) {
+  const totals = new Map();
+  for (const reservation of reservations) {
+    for (const item of reservationItems(reservation)) {
+      const current = totals.get(item.productId) || { productId: item.productId, quantity: 0, total: 0 };
+      current.quantity += Number(item.quantity) || 0;
+      current.total += (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
+      totals.set(item.productId, current);
+    }
+  }
+  return Array.from(totals.values()).map((item) => `
+    <span class="reservation-product-line">
+      <strong>${escapeHtml(productName(item.productId))}</strong>
+      <em>${units(item.quantity)} · ${money(item.total)}</em>
+    </span>
+  `).join("");
 }
 
 function renderReservationCustomerEditor() {

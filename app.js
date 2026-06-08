@@ -1,6 +1,6 @@
 const DB_NAME = "laminas-mundial-pos-db";
 const DB_VERSION = 2;
-const APP_VERSION = "20260607-5";
+const APP_VERSION = "20260607-6";
 const STORE_NAMES = ["products", "suppliers", "sales", "purchases", "payments", "customers", "reservations", "settings"];
 const DEFAULT_PRODUCT_ID = "product-laminas-mundial";
 const DEFAULT_SUPPLIER_ID = "supplier-general";
@@ -15,6 +15,8 @@ let saleDraftItems = [];
 let reservationDraftItems = [];
 let whatsappBroadcastPrepared = false;
 let lastTouchEnd = 0;
+let touchStartX = 0;
+let touchStartY = 0;
 
 const state = {
   products: [],
@@ -2183,6 +2185,22 @@ async function savePayment(event) {
 }
 
 function disableDoubleTapZoom() {
+  document.addEventListener("touchstart", (event) => {
+    const touch = event.touches?.[0];
+    if (!touch) return;
+    touchStartX = touch.clientX;
+    touchStartY = touch.clientY;
+  }, { passive: true });
+  document.addEventListener("touchmove", (event) => {
+    const touch = event.touches?.[0];
+    if (!touch) return;
+    const deltaX = touch.clientX - touchStartX;
+    const deltaY = touch.clientY - touchStartY;
+    const horizontal = Math.abs(deltaX) > 6 && Math.abs(deltaX) > Math.abs(deltaY) * 1.15;
+    if (horizontal) {
+      event.preventDefault();
+    }
+  }, { passive: false });
   document.addEventListener("touchend", (event) => {
     const now = Date.now();
     if (now - lastTouchEnd <= 320) {
@@ -2190,6 +2208,7 @@ function disableDoubleTapZoom() {
     }
     lastTouchEnd = now;
   }, { passive: false });
+  document.addEventListener("gesturestart", (event) => event.preventDefault(), { passive: false });
 }
 
 async function init() {

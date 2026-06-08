@@ -1,6 +1,6 @@
 const DB_NAME = "laminas-mundial-pos-db";
 const DB_VERSION = 2;
-const APP_VERSION = "20260607-2";
+const APP_VERSION = "20260607-3";
 const STORE_NAMES = ["products", "suppliers", "sales", "purchases", "payments", "customers", "reservations", "settings"];
 const DEFAULT_PRODUCT_ID = "product-laminas-mundial";
 const DEFAULT_SUPPLIER_ID = "supplier-general";
@@ -760,11 +760,11 @@ function readSalePaymentBreakdown(total) {
   return { breakdown };
 }
 
-function adjustSaleQuantity(delta) {
-  const input = $("#saleQty");
+function adjustQuantity(selector, delta, onChange) {
+  const input = $(selector);
   const current = Number(input.value) || 0;
   input.value = Math.max(1, current + delta);
-  updateSalePreview();
+  onChange();
 }
 
 function updateReservationPreview() {
@@ -840,7 +840,7 @@ function reservationInfoLine(reservation) {
   const payment = paymentStatusLabel(reservation.paymentStatus);
   const note = reservation.note ? ` · ${reservation.note}` : "";
   const customer = state.customers.find((row) => row.id === reservation.customerId);
-  return `${shortDate(reservation.createdAt)} · ${customerName(reservation.customerId)}${customer?.phone ? ` · ${customer.phone}` : ""} · ${payment}${note}`;
+  return `${shortDate(reservation.createdAt)}${customer?.phone ? ` · ${customer.phone}` : ""} · ${payment}${note}`;
 }
 
 function reservationWhatsappAction(reservation, message = "") {
@@ -904,11 +904,11 @@ function reservationCardHtml(reservation) {
     <article class="list-item reservation-item ${delivered ? "delivered" : ""}">
       <div class="reservation-content">
         <div class="reservation-heading">
-          <span class="list-title">${money(reservationTotal(reservation))}</span>
+          <span class="reservation-customer-name">${escapeHtml(customerName(reservation.customerId))}</span>
           <span class="status-pill ${delivered ? "done" : "pending"}">${delivered ? "Entregada" : "Pendiente"}</span>
         </div>
         <div class="reservation-product-lines">${reservationProductLines(reservation)}</div>
-        <span class="reservation-info">${escapeHtml(info)}</span>
+        <span class="reservation-info">${money(reservationTotal(reservation))} · ${escapeHtml(info)}</span>
       </div>
       <div class="item-actions ${delivered ? "" : "wide-actions"}">
         ${delivered ? "" : `<button class="secondary deliver-button" type="button" data-deliver-reservation="${reservation.id}">Entregado</button>`}
@@ -1040,13 +1040,21 @@ function allMonthKeys() {
   return Array.from(keys).sort().reverse();
 }
 
+function dashboardRange(key) {
+  if (key !== "all") return monthRange(key);
+  return { start: new Date(0), end: new Date(8640000000000000) };
+}
+
 function renderDashboard() {
   const select = $("#dashboardMonth");
   const current = select.value || monthKey(new Date());
   const keys = allMonthKeys();
-  select.innerHTML = keys.map((key) => `<option value="${key}">${monthLabel(key)}</option>`).join("");
-  select.value = keys.includes(current) ? current : keys[0];
-  const { start, end } = monthRange(select.value);
+  select.innerHTML = [
+    `<option value="all">Todo</option>`,
+    ...keys.map((key) => `<option value="${key}">${monthLabel(key)}</option>`)
+  ].join("");
+  select.value = current === "all" ? "all" : keys.includes(current) ? current : keys[0];
+  const { start, end } = dashboardRange(select.value);
   const sales = state.sales.filter((sale) => isInRange(sale.createdAt, start, end));
   const purchases = state.purchases.filter((purchase) => isInRange(purchase.createdAt, start, end));
   const salesTotal = sales.reduce((sum, sale) => sum + saleTotal(sale), 0);
@@ -1105,7 +1113,7 @@ function renderDashboard() {
 
   renderDailyPaymentSummary();
   renderReservedProducts(reservations);
-  renderMonthlyTrend(select.value);
+  renderMonthlyTrend(select.value === "all" ? monthKey(new Date()) : select.value);
   renderTopProducts(sales, avgCostByProduct);
   renderBusinessAlerts({ pendingRows, lowStock, providerDebt, grossProfit, salesTotal, availableTotal });
 }
@@ -1872,8 +1880,8 @@ function bindEvents() {
   $("#dashboardMonth").addEventListener("change", renderDashboard);
   $("#dailyPaymentDate").addEventListener("change", renderDailyPaymentSummary);
   $("#saleQty").addEventListener("input", updateSalePreview);
-  $("#saleQtyMinus").addEventListener("click", () => adjustSaleQuantity(-1));
-  $("#saleQtyPlus").addEventListener("click", () => adjustSaleQuantity(1));
+  $("#saleQtyMinus").addEventListener("click", () => adjustQuantity("#saleQty", -1, updateSalePreview));
+  $("#saleQtyPlus").addEventListener("click", () => adjustQuantity("#saleQty", 1, updateSalePreview));
   $("#saleProduct").addEventListener("change", () => {
     state.settings.lastSaleProductId = $("#saleProduct").value;
     saveSettings();
@@ -1892,6 +1900,8 @@ function bindEvents() {
     $(selector).addEventListener("input", syncSalePaymentSplit);
   });
   $("#reservationQty").addEventListener("input", updateReservationPreview);
+  $("#reservationQtyMinus").addEventListener("click", () => adjustQuantity("#reservationQty", -1, updateReservationPreview));
+  $("#reservationQtyPlus").addEventListener("click", () => adjustQuantity("#reservationQty", 1, updateReservationPreview));
   $("#reservationProduct").addEventListener("change", () => {
     state.settings.lastReservationProductId = $("#reservationProduct").value;
     saveSettings();
@@ -1920,6 +1930,8 @@ function bindEvents() {
     toast("Mensajes de WhatsApp preparados");
   });
   $("#purchaseQty").addEventListener("input", updatePurchasePreview);
+  $("#purchaseQtyMinus").addEventListener("click", () => adjustQuantity("#purchaseQty", -1, updatePurchasePreview));
+  $("#purchaseQtyPlus").addEventListener("click", () => adjustQuantity("#purchaseQty", 1, updatePurchasePreview));
   $("#purchaseCost").addEventListener("input", updatePurchasePreview);
   $("#purchasePaid").addEventListener("input", updatePurchasePreview);
   $$("input[name='purchaseDebtStatus']").forEach((input) => input.addEventListener("change", updatePurchasePreview));

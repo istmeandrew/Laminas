@@ -23,7 +23,7 @@ html {
   overflow-x: hidden;
   overscroll-behavior-x: none;
   overscroll-behavior-inline: none;
-  touch-action: manipulation;
+  touch-action: pan-y manipulation;
 }
 
 body {
@@ -34,6 +34,7 @@ body {
   overflow-x: hidden;
   overscroll-behavior-x: none;
   overscroll-behavior-inline: none;
+  touch-action: pan-y manipulation;
   background:
     radial-gradient(circle at 18% -10%, rgba(210, 23, 31, .16), transparent 30%),
     linear-gradient(180deg, #fff4bd 0%, var(--bg) 36%, #fffdf4 100%);
@@ -56,6 +57,7 @@ button {
   overflow-x: hidden;
   overscroll-behavior-x: none;
   overscroll-behavior-inline: none;
+  touch-action: pan-y manipulation;
   margin: 0 auto;
   padding: max(18px, env(safe-area-inset-top)) 14px calc(98px + env(safe-area-inset-bottom));
 }

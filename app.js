@@ -1,6 +1,6 @@
 const DB_NAME = "laminas-mundial-pos-db";
 const DB_VERSION = 2;
-const APP_VERSION = "20260607-6";
+const APP_VERSION = "20260607-7";
 const STORE_NAMES = ["products", "suppliers", "sales", "purchases", "payments", "customers", "reservations", "settings"];
 const DEFAULT_PRODUCT_ID = "product-laminas-mundial";
 const DEFAULT_SUPPLIER_ID = "supplier-general";
@@ -17,6 +17,7 @@ let whatsappBroadcastPrepared = false;
 let lastTouchEnd = 0;
 let touchStartX = 0;
 let touchStartY = 0;
+let touchHorizontalLocked = false;
 
 const state = {
   products: [],
@@ -2185,29 +2186,44 @@ async function savePayment(event) {
 }
 
 function disableDoubleTapZoom() {
+  const resetHorizontalScroll = () => {
+    if (window.scrollX !== 0) window.scrollTo(0, window.scrollY);
+    if (document.documentElement.scrollLeft) document.documentElement.scrollLeft = 0;
+    if (document.body.scrollLeft) document.body.scrollLeft = 0;
+  };
   document.addEventListener("touchstart", (event) => {
     const touch = event.touches?.[0];
     if (!touch) return;
     touchStartX = touch.clientX;
     touchStartY = touch.clientY;
+    touchHorizontalLocked = false;
+    resetHorizontalScroll();
   }, { passive: true });
   document.addEventListener("touchmove", (event) => {
     const touch = event.touches?.[0];
     if (!touch) return;
     const deltaX = touch.clientX - touchStartX;
     const deltaY = touch.clientY - touchStartY;
-    const horizontal = Math.abs(deltaX) > 6 && Math.abs(deltaX) > Math.abs(deltaY) * 1.15;
-    if (horizontal) {
+    const horizontalDistance = Math.abs(deltaX);
+    const verticalDistance = Math.abs(deltaY);
+    if (horizontalDistance > 8 && horizontalDistance > verticalDistance * 0.35) {
+      touchHorizontalLocked = true;
+    }
+    if (touchHorizontalLocked) {
       event.preventDefault();
     }
+    resetHorizontalScroll();
   }, { passive: false });
   document.addEventListener("touchend", (event) => {
     const now = Date.now();
-    if (now - lastTouchEnd <= 320) {
+    if (touchHorizontalLocked || now - lastTouchEnd <= 320) {
       event.preventDefault();
     }
     lastTouchEnd = now;
+    touchHorizontalLocked = false;
+    resetHorizontalScroll();
   }, { passive: false });
+  window.addEventListener("scroll", resetHorizontalScroll, { passive: true });
   document.addEventListener("gesturestart", (event) => event.preventDefault(), { passive: false });
 }
 

@@ -189,6 +189,35 @@ label { display: grid; gap: 6px; }
   gap: 10px;
 }
 
+.quantity-control {
+  min-height: 46px;
+  display: grid;
+  grid-template-columns: 50px 1fr 50px;
+  align-items: stretch;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: #fffefa;
+  overflow: hidden;
+}
+
+.quantity-control input {
+  min-height: 44px;
+  border: 0;
+  border-radius: 0;
+  text-align: center;
+  font-size: 1.15rem;
+  font-weight: 900;
+}
+
+.quantity-button {
+  min-height: 44px;
+  border-radius: 0;
+  background: var(--brand);
+  color: #fffdf4;
+  font-size: 1.45rem;
+  font-weight: 900;
+}
+
 input, select, textarea {
   width: 100%;
   min-height: 46px;
@@ -367,6 +396,28 @@ textarea {
   background: var(--brand);
   border-color: var(--brand);
   color: #fffdf4;
+}
+
+.payment-split {
+  display: grid;
+  gap: 9px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: #fff8dc;
+  padding: 10px;
+}
+
+.payment-amount-grid,
+.edit-payment-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.payment-hint {
+  color: var(--muted);
+  font-size: .82rem;
+  font-weight: 900;
 }
 
 .primary,
@@ -915,6 +966,11 @@ textarea {
   gap: 9px;
 }
 
+.edit-payment-list {
+  display: grid;
+  gap: 9px;
+}
+
 .edit-item-row {
   display: grid;
   grid-template-columns: 1.3fr .7fr .8fr;
@@ -986,6 +1042,11 @@ textarea {
   }
 
   .compact-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .payment-amount-grid,
+  .edit-payment-grid {
     grid-template-columns: 1fr;
   }
 

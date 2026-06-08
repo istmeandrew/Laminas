@@ -1,10 +1,11 @@
 const DB_NAME = "laminas-mundial-pos-db";
 const DB_VERSION = 2;
-const APP_VERSION = "20260607-1";
+const APP_VERSION = "20260607-2";
 const STORE_NAMES = ["products", "suppliers", "sales", "purchases", "payments", "customers", "reservations", "settings"];
 const DEFAULT_PRODUCT_ID = "product-laminas-mundial";
 const DEFAULT_SUPPLIER_ID = "supplier-general";
 const ADMIN_PIN = "4818";
+const SALE_PAYMENT_METHODS = ["efectivo", "tarjeta", "pendiente"];
 
 let db;
 let pendingDelete = null;
@@ -252,6 +253,47 @@ function paymentStatusLabel(status) {
   if (status === "tarjeta") return "Tarjeta";
   if (status === "pendiente") return "Pendiente de pago";
   return "Efectivo";
+}
+
+function paymentMethodLabel(method) {
+  return method === "tarjeta" ? "Tarjeta" : paymentStatusLabel(method);
+}
+
+function emptySalePaymentBreakdown() {
+  return { efectivo: 0, tarjeta: 0, pendiente: 0 };
+}
+
+function salePaymentBreakdown(sale) {
+  const total = saleTotal(sale);
+  const breakdown = emptySalePaymentBreakdown();
+  if (sale.paymentBreakdown && typeof sale.paymentBreakdown === "object") {
+    for (const method of SALE_PAYMENT_METHODS) {
+      breakdown[method] = Math.max(0, Number(sale.paymentBreakdown[method]) || 0);
+    }
+    if (Object.values(breakdown).some((amount) => amount > 0) || total === 0) return breakdown;
+  }
+  const status = SALE_PAYMENT_METHODS.includes(sale.paymentStatus) ? sale.paymentStatus : "efectivo";
+  breakdown[status] = total;
+  return breakdown;
+}
+
+function salePendingAmount(sale) {
+  return salePaymentBreakdown(sale).pendiente || 0;
+}
+
+function paymentStatusFromBreakdown(breakdown) {
+  const methods = SALE_PAYMENT_METHODS.filter((method) => (Number(breakdown[method]) || 0) > 0);
+  if (methods.length === 1) return methods[0];
+  if (methods.length > 1) return "mixto";
+  return "efectivo";
+}
+
+function salePaymentLabel(sale) {
+  const breakdown = salePaymentBreakdown(sale);
+  const methods = SALE_PAYMENT_METHODS.filter((method) => (Number(breakdown[method]) || 0) > 0);
+  if (!methods.length) return paymentStatusLabel(sale.paymentStatus);
+  if (methods.length === 1) return paymentMethodLabel(methods[0]);
+  return methods.map((method) => `${paymentMethodLabel(method)} ${money(breakdown[method])}`).join(" · ");
 }
 
 function activeProducts() {
@@ -640,9 +682,89 @@ function addCurrentReservationItemToDraft() {
   updateReservationPreview();
 }
 
-function updateSalePreview() {
+function currentSaleTotal() {
   const current = readFormItem("#saleProduct", "#saleQty", "#salePrice");
-  $("#salePreview").textContent = money(itemsTotal(draftItemsForSubmit(saleDraftItems, current)));
+  return itemsTotal(draftItemsForSubmit(saleDraftItems, current));
+}
+
+function selectedSalePaymentMethods() {
+  return $$("input[name='salePaymentMethods']:checked").map((input) => input.value);
+}
+
+function syncSalePaymentSplit() {
+  const selected = selectedSalePaymentMethods();
+  if (!selected.length) {
+    const fallback = $("input[name='salePaymentMethods'][value='efectivo']");
+    fallback.checked = true;
+    selected.push("efectivo");
+  }
+  const total = currentSaleTotal();
+  const useSplit = selected.length > 1;
+  $("#salePaymentSplit").classList.toggle("hidden", !useSplit);
+  $("#salePaymentSplitTotal").textContent = money(total);
+  for (const method of SALE_PAYMENT_METHODS) {
+    const row = $(`[data-sale-payment-row='${method}']`);
+    if (row) row.classList.toggle("hidden", !selected.includes(method));
+  }
+  if (!useSplit) {
+    for (const input of ["#salePaymentCash", "#salePaymentCard", "#salePaymentPending"]) {
+      $(input).value = "";
+    }
+    $("#salePaymentSplitHint").textContent = "Selecciona dos o más métodos para repartir el monto.";
+    return;
+  }
+  const sum = paymentSplitInputTotal(selected);
+  const diff = total - sum;
+  $("#salePaymentSplitHint").textContent = diff === 0
+    ? "Reparto completo."
+    : diff > 0
+      ? `Falta por repartir ${money(diff)}.`
+      : `Sobra ${money(Math.abs(diff))}.`;
+}
+
+function updateSalePreview() {
+  $("#salePreview").textContent = money(currentSaleTotal());
+  syncSalePaymentSplit();
+}
+
+function paymentInputSelector(method) {
+  return {
+    efectivo: "#salePaymentCash",
+    tarjeta: "#salePaymentCard",
+    pendiente: "#salePaymentPending"
+  }[method];
+}
+
+function paymentSplitInputTotal(methods = SALE_PAYMENT_METHODS) {
+  return methods.reduce((sum, method) => sum + (Number($(paymentInputSelector(method)).value) || 0), 0);
+}
+
+function readSalePaymentBreakdown(total) {
+  const selected = selectedSalePaymentMethods();
+  if (!selected.length) return { error: "Selecciona al menos un método de pago" };
+  const breakdown = emptySalePaymentBreakdown();
+  if (selected.length === 1) {
+    breakdown[selected[0]] = total;
+    return { breakdown };
+  }
+  for (const method of selected) {
+    breakdown[method] = Number($(paymentInputSelector(method)).value) || 0;
+  }
+  const sum = Object.values(breakdown).reduce((totalAmount, amount) => totalAmount + amount, 0);
+  if (total > 0 && selected.some((method) => breakdown[method] <= 0)) {
+    return { error: "Agrega un monto mayor a 0 en cada método seleccionado" };
+  }
+  if (sum !== total) {
+    return { error: `Los pagos deben sumar ${money(total)}. Ahora suman ${money(sum)}` };
+  }
+  return { breakdown };
+}
+
+function adjustSaleQuantity(delta) {
+  const input = $("#saleQty");
+  const current = Number(input.value) || 0;
+  input.value = Math.max(1, current + delta);
+  updateSalePreview();
 }
 
 function updateReservationPreview() {
@@ -671,7 +793,7 @@ function renderSummary() {
   const todaySales = state.sales.filter((sale) => isInRange(sale.createdAt, todayStart, tomorrow));
   const todayTotal = todaySales.reduce((sum, sale) => sum + saleTotal(sale), 0);
   const todayUnits = todaySales.reduce((sum, sale) => sum + itemsQuantity(saleItems(sale)), 0);
-  const receivable = state.sales.filter((sale) => sale.paymentStatus === "pendiente").reduce((sum, sale) => sum + saleTotal(sale), 0);
+  const receivable = state.sales.reduce((sum, sale) => sum + salePendingAmount(sale), 0);
   const availableRows = availableStockByProduct();
   const stock = availableRows.reduce((sum, row) => sum + row.available, 0);
   const breakdown = availableRows
@@ -686,9 +808,8 @@ function renderSummary() {
 }
 
 function saleMeta(sale) {
-  const status = sale.paymentStatus === "pendiente" ? "pendiente" : sale.paymentStatus;
   const note = sale.note ? ` · ${sale.note}` : "";
-  return `${dateTime(sale.createdAt)} · ${itemsSummary(saleItems(sale))} · ${status}${note}`;
+  return `${dateTime(sale.createdAt)} · ${itemsSummary(saleItems(sale))} · ${salePaymentLabel(sale)}${note}`;
 }
 
 function purchaseMeta(purchase) {
@@ -932,10 +1053,10 @@ function renderDashboard() {
   const purchasesTotal = purchases.reduce((sum, purchase) => sum + purchaseTotal(purchase), 0);
   const sold = sales.reduce((sum, sale) => sum + itemsQuantity(saleItems(sale)), 0);
   const bought = purchases.reduce((sum, purchase) => sum + (Number(purchase.quantity) || 0), 0);
-  const cash = sales.filter((sale) => sale.paymentStatus === "efectivo").reduce((sum, sale) => sum + saleTotal(sale), 0);
-  const card = sales.filter((sale) => sale.paymentStatus === "tarjeta").reduce((sum, sale) => sum + saleTotal(sale), 0);
-  const pending = sales.filter((sale) => sale.paymentStatus === "pendiente").reduce((sum, sale) => sum + saleTotal(sale), 0);
-  const pendingRows = sales.filter((sale) => sale.paymentStatus === "pendiente");
+  const cash = sales.reduce((sum, sale) => sum + salePaymentBreakdown(sale).efectivo, 0);
+  const card = sales.reduce((sum, sale) => sum + salePaymentBreakdown(sale).tarjeta, 0);
+  const pending = sales.reduce((sum, sale) => sum + salePendingAmount(sale), 0);
+  const pendingRows = sales.filter((sale) => salePendingAmount(sale) > 0);
   const providerDebt = activeSuppliers().reduce((sum, supplier) => sum + Math.max(0, supplierDebt(supplier.id)), 0);
   const stockRows = stockByProduct();
   const availableRows = availableStockByProduct();
@@ -1034,9 +1155,15 @@ function renderDailyPaymentSummary() {
   };
   const productRows = new Map();
   for (const sale of sales) {
-    const key = groups[sale.paymentStatus] ? sale.paymentStatus : "efectivo";
-    groups[key].amount += saleTotal(sale);
-    groups[key].units += itemsQuantity(saleItems(sale));
+    const saleAmount = saleTotal(sale);
+    const saleUnits = itemsQuantity(saleItems(sale));
+    const salePayments = salePaymentBreakdown(sale);
+    for (const method of SALE_PAYMENT_METHODS) {
+      const amount = salePayments[method] || 0;
+      if (amount <= 0) continue;
+      groups[method].amount += amount;
+      groups[method].units += saleAmount > 0 ? Math.round(saleUnits * (amount / saleAmount)) : saleUnits;
+    }
     for (const item of saleItems(sale)) {
       const row = productRows.get(item.productId) || {
         productId: item.productId,
@@ -1048,7 +1175,11 @@ function renderDailyPaymentSummary() {
       const amount = qty * (Number(item.unitPrice) || 0);
       row.quantity += qty;
       row.amount += amount;
-      row.payments[key] += amount;
+      for (const method of SALE_PAYMENT_METHODS) {
+        const paymentAmount = salePayments[method] || 0;
+        if (paymentAmount <= 0) continue;
+        row.payments[method] += saleAmount > 0 ? Math.round(amount * (paymentAmount / saleAmount)) : 0;
+      }
       productRows.set(item.productId, row);
     }
   }
@@ -1069,7 +1200,7 @@ function renderDailyProductSales(rows) {
     sorted.map((row) => {
       const paymentParts = Object.entries(row.payments)
         .filter(([, amount]) => amount > 0)
-        .map(([name, amount]) => `${name}: ${money(amount)}`)
+        .map(([name, amount]) => `${paymentMethodLabel(name)}: ${money(amount)}`)
         .join(" · ");
       return `
         <article class="list-item product-rank">
@@ -1144,7 +1275,7 @@ function renderTopProducts(sales, avgCostByProduct) {
 function renderBusinessAlerts({ pendingRows, lowStock, providerDebt, grossProfit, salesTotal, availableTotal }) {
   const alerts = [];
   if (pendingRows.length) {
-    const total = pendingRows.reduce((sum, sale) => sum + saleTotal(sale), 0);
+    const total = pendingRows.reduce((sum, sale) => sum + salePendingAmount(sale), 0);
     alerts.push({
       title: "Cobros pendientes",
       meta: `${pendingRows.length} ventas por cobrar · ${money(total)}`
@@ -1245,11 +1376,11 @@ function renderHistory() {
     `);
   }
   if (filter === "debtors") {
-    rows = state.sales.filter((sale) => sale.paymentStatus === "pendiente").map((sale) => `
+    rows = state.sales.filter((sale) => salePendingAmount(sale) > 0).map((sale) => `
       <article class="list-item">
         <div class="list-main">
           <span class="list-title">${sale.note || "Cliente sin nombre"}</span>
-          <span class="item-meta">${money(saleTotal(sale))} · ${dateTime(sale.createdAt)} · ${itemsSummary(saleItems(sale))}</span>
+          <span class="item-meta">${money(salePendingAmount(sale))} pendiente · ${dateTime(sale.createdAt)} · ${itemsSummary(saleItems(sale))}</span>
         </div>
         ${historyActions("sales", sale.id)}
       </article>
@@ -1385,6 +1516,27 @@ function editItemsFields(items) {
   `;
 }
 
+function editSalePaymentFields(sale) {
+  const breakdown = salePaymentBreakdown(sale);
+  return `
+    <div class="edit-payment-list">
+      <span class="item-meta">Montos por método de pago</span>
+      <div class="edit-payment-grid">
+        <label>Efectivo
+          <input data-edit-payment="efectivo" type="number" min="0" step="1" value="${breakdown.efectivo || 0}">
+        </label>
+        <label>Tarjeta
+          <input data-edit-payment="tarjeta" type="number" min="0" step="1" value="${breakdown.tarjeta || 0}">
+        </label>
+        <label>Pendiente
+          <input data-edit-payment="pendiente" type="number" min="0" step="1" value="${breakdown.pendiente || 0}">
+        </label>
+      </div>
+      <span class="item-meta">Los montos deben sumar el total actualizado de la venta.</span>
+    </div>
+  `;
+}
+
 function collectEditItems() {
   return $$("#editFields [data-edit-item]")
     .map((row) => ({
@@ -1393,6 +1545,18 @@ function collectEditItems() {
       unitPrice: Number(row.querySelector("[data-edit-item-price]").value) || 0
     }))
     .filter((item) => item.productId && item.quantity > 0);
+}
+
+function collectEditSalePaymentBreakdown(total) {
+  const breakdown = emptySalePaymentBreakdown();
+  $$("#editFields [data-edit-payment]").forEach((input) => {
+    breakdown[input.dataset.editPayment] = Number(input.value) || 0;
+  });
+  const sum = Object.values(breakdown).reduce((totalAmount, amount) => totalAmount + amount, 0);
+  if (sum !== total) {
+    return { error: `Los pagos deben sumar ${money(total)}. Ahora suman ${money(sum)}` };
+  }
+  return { breakdown };
 }
 
 function openEdit(type, id) {
@@ -1405,11 +1569,7 @@ function openEdit(type, id) {
     fields.innerHTML = [
       editField("Fecha", "editDate", "date", todayInputValueFromIso(sale.createdAt), "required"),
       editItemsFields(saleItems(sale)),
-      `<label>Estado pago<select id="editPaymentStatus">
-        <option value="efectivo" ${sale.paymentStatus === "efectivo" ? "selected" : ""}>Efectivo</option>
-        <option value="tarjeta" ${sale.paymentStatus === "tarjeta" ? "selected" : ""}>Tarjeta</option>
-        <option value="pendiente" ${sale.paymentStatus === "pendiente" ? "selected" : ""}>Pendiente</option>
-      </select></label>`,
+      editSalePaymentFields(sale),
       editField("Cliente / nota", "editNote", "text", sale.note || "")
     ].join("");
   }
@@ -1486,6 +1646,12 @@ async function saveEdit(event) {
       toast("Agrega al menos un producto");
       return;
     }
+    const total = itemsTotal(items);
+    const payment = collectEditSalePaymentBreakdown(total);
+    if (payment.error) {
+      toast(payment.error);
+      return;
+    }
     await put("sales", {
       ...sale,
       items,
@@ -1493,7 +1659,8 @@ async function saveEdit(event) {
       createdAt: dateKeepingTime(sale.createdAt, $("#editDate").value),
       quantity: itemsQuantity(items),
       unitPrice: averageUnitPrice(items),
-      paymentStatus: $("#editPaymentStatus").value,
+      paymentStatus: paymentStatusFromBreakdown(payment.breakdown),
+      paymentBreakdown: payment.breakdown,
       note: $("#editNote").value.trim(),
       updatedAt: new Date().toISOString()
     });
@@ -1705,6 +1872,8 @@ function bindEvents() {
   $("#dashboardMonth").addEventListener("change", renderDashboard);
   $("#dailyPaymentDate").addEventListener("change", renderDailyPaymentSummary);
   $("#saleQty").addEventListener("input", updateSalePreview);
+  $("#saleQtyMinus").addEventListener("click", () => adjustSaleQuantity(-1));
+  $("#saleQtyPlus").addEventListener("click", () => adjustSaleQuantity(1));
   $("#saleProduct").addEventListener("change", () => {
     state.settings.lastSaleProductId = $("#saleProduct").value;
     saveSettings();
@@ -1717,6 +1886,10 @@ function bindEvents() {
     saveSettings();
     updateSalePreview();
     renderPriceButtons();
+  });
+  $$("input[name='salePaymentMethods']").forEach((input) => input.addEventListener("change", syncSalePaymentSplit));
+  ["#salePaymentCash", "#salePaymentCard", "#salePaymentPending"].forEach((selector) => {
+    $(selector).addEventListener("input", syncSalePaymentSplit);
   });
   $("#reservationQty").addEventListener("input", updateReservationPreview);
   $("#reservationProduct").addEventListener("change", () => {
@@ -1821,6 +1994,12 @@ async function saveSale(event) {
     toast(stockIssue);
     return;
   }
+  const total = itemsTotal(items);
+  const payment = readSalePaymentBreakdown(total);
+  if (payment.error) {
+    toast(payment.error);
+    return;
+  }
   const sale = {
     id: uid("sale"),
     productId: primaryProductId(items),
@@ -1828,7 +2007,8 @@ async function saveSale(event) {
     quantity: itemsQuantity(items),
     unitPrice: averageUnitPrice(items),
     items,
-    paymentStatus: activeRadioValue("salePaymentStatus"),
+    paymentStatus: paymentStatusFromBreakdown(payment.breakdown),
+    paymentBreakdown: payment.breakdown,
     note: $("#saleNote").value.trim()
   };
   await put("sales", sale);
@@ -1842,6 +2022,9 @@ async function saveSale(event) {
   saleDraftItems = [];
   $("#saleQty").value = "";
   $("#saleNote").value = "";
+  ["#salePaymentCash", "#salePaymentCard", "#salePaymentPending"].forEach((selector) => {
+    $(selector).value = "";
+  });
   await loadState();
   renderAll();
   if (state.settings.lastSaleProductId) {

@@ -1,6 +1,6 @@
 const DB_NAME = "laminas-mundial-pos-db";
 const DB_VERSION = 2;
-const APP_VERSION = "20260607-3";
+const APP_VERSION = "20260607-4";
 const STORE_NAMES = ["products", "suppliers", "sales", "purchases", "payments", "customers", "reservations", "settings"];
 const DEFAULT_PRODUCT_ID = "product-laminas-mundial";
 const DEFAULT_SUPPLIER_ID = "supplier-general";
@@ -14,6 +14,7 @@ let toastTimer;
 let saleDraftItems = [];
 let reservationDraftItems = [];
 let whatsappBroadcastPrepared = false;
+let lastTouchEnd = 0;
 
 const state = {
   products: [],
@@ -2181,9 +2182,20 @@ async function savePayment(event) {
   toast("Pago registrado");
 }
 
+function disableDoubleTapZoom() {
+  document.addEventListener("touchend", (event) => {
+    const now = Date.now();
+    if (now - lastTouchEnd <= 320) {
+      event.preventDefault();
+    }
+    lastTouchEnd = now;
+  }, { passive: false });
+}
+
 async function init() {
   db = await openDb();
   await loadState();
+  disableDoubleTapZoom();
   bindEvents();
   renderAll();
   updateClock();

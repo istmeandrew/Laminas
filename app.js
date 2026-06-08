@@ -1,6 +1,6 @@
 const DB_NAME = "laminas-mundial-pos-db";
 const DB_VERSION = 2;
-const APP_VERSION = "20260531-6";
+const APP_VERSION = "20260607-1";
 const STORE_NAMES = ["products", "suppliers", "sales", "purchases", "payments", "customers", "reservations", "settings"];
 const DEFAULT_PRODUCT_ID = "product-laminas-mundial";
 const DEFAULT_SUPPLIER_ID = "supplier-general";
@@ -25,6 +25,7 @@ const state = {
   settings: {
     salePricePresets: [500, 700, 1000, 1500],
     lastSalePrice: 1000,
+    lastSaleProductId: DEFAULT_PRODUCT_ID,
     lastReservationProductId: DEFAULT_PRODUCT_ID
   }
 };
@@ -529,6 +530,9 @@ function renderSelectors() {
   const suppliers = activeSuppliers();
   const customers = activeCustomers();
   fillSelect($("#saleProduct"), products, (product) => product.name);
+  if (products.some((product) => product.id === state.settings.lastSaleProductId)) {
+    $("#saleProduct").value = state.settings.lastSaleProductId;
+  }
   fillSelect($("#reservationProduct"), products, (product) => product.name);
   if (products.some((product) => product.id === state.settings.lastReservationProductId)) {
     $("#reservationProduct").value = state.settings.lastReservationProductId;
@@ -615,6 +619,8 @@ function addCurrentSaleItemToDraft() {
     return;
   }
   mergeDraftItem(saleDraftItems, item);
+  state.settings.lastSaleProductId = item.productId;
+  saveSettings();
   $("#saleQty").value = "";
   renderDraftItems();
   updateSalePreview();
@@ -1699,7 +1705,11 @@ function bindEvents() {
   $("#dashboardMonth").addEventListener("change", renderDashboard);
   $("#dailyPaymentDate").addEventListener("change", renderDailyPaymentSummary);
   $("#saleQty").addEventListener("input", updateSalePreview);
-  $("#saleProduct").addEventListener("change", updateSalePreview);
+  $("#saleProduct").addEventListener("change", () => {
+    state.settings.lastSaleProductId = $("#saleProduct").value;
+    saveSettings();
+    updateSalePreview();
+  });
   $("#salePrice").addEventListener("input", () => {
     const rawPrice = $("#salePrice").value;
     const price = Number(rawPrice);
@@ -1823,6 +1833,7 @@ async function saveSale(event) {
   };
   await put("sales", sale);
   const lastPrice = items[items.length - 1]?.unitPrice ?? sale.unitPrice;
+  state.settings.lastSaleProductId = items[items.length - 1]?.productId || sale.productId;
   state.settings.lastSalePrice = lastPrice;
   if (!state.settings.salePricePresets.includes(lastPrice)) {
     state.settings.salePricePresets.push(lastPrice);
@@ -1833,6 +1844,10 @@ async function saveSale(event) {
   $("#saleNote").value = "";
   await loadState();
   renderAll();
+  if (state.settings.lastSaleProductId) {
+    $("#saleProduct").value = state.settings.lastSaleProductId;
+  }
+  updateSalePreview();
   toast("Venta guardada");
 }
 

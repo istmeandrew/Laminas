@@ -9,10 +9,10 @@
   <meta name="apple-mobile-web-app-title" content="Láminas POS">
   <meta name="description" content="Punto de venta local para láminas del mundial, inventario, compras, pagos y respaldo.">
   <title>Láminas Mundial POS</title>
-  <link rel="manifest" href="manifest.webmanifest?v=20260531-6">
-  <link rel="icon" href="icon.svg?v=20260531-6" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=20260531-6">
-  <link rel="stylesheet" href="styles.css?v=20260531-6">
+  <link rel="manifest" href="manifest.webmanifest?v=20260607-1">
+  <link rel="icon" href="icon.svg?v=20260607-1" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=20260607-1">
+  <link rel="stylesheet" href="styles.css?v=20260607-1">
 </head>
 <body>
   <main class="app">
@@ -49,18 +49,20 @@
           <h2>Registrar venta</h2>
           <span id="saleClock">Ahora</span>
         </div>
-        <label>Producto
-          <select id="saleProduct"></select>
-        </label>
-        <label>Fecha de venta
-          <input id="saleDate" type="date" required>
-        </label>
-        <label>Cantidad vendida
-          <input id="saleQty" type="number" min="1" step="1" inputmode="numeric" placeholder="Ej: 10">
-        </label>
-        <label>Precio por unidad
-          <input id="salePrice" type="number" min="0" step="1" inputmode="numeric" required>
-        </label>
+        <div class="compact-fields">
+          <label>Producto
+            <select id="saleProduct"></select>
+          </label>
+          <label>Fecha de venta
+            <input id="saleDate" type="date" required>
+          </label>
+          <label>Cantidad vendida
+            <input id="saleQty" type="number" min="1" step="1" inputmode="numeric" placeholder="Ej: 10">
+          </label>
+          <label>Precio por unidad
+            <input id="salePrice" type="number" min="0" step="1" inputmode="numeric" required>
+          </label>
+        </div>
         <div class="price-tools">
           <div class="price-buttons" id="salePriceButtons"></div>
           <div class="add-row">
@@ -465,6 +467,6 @@
   </dialog>
 
   <div class="toast" id="toast"></div>
-  <script src="app.js?v=20260531-6"></script>
+  <script src="app.js?v=20260607-1"></script>
 </body>
 </html>
